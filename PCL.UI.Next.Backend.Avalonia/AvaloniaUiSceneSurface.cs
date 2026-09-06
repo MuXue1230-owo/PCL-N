@@ -218,6 +218,10 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             }
         }
 
+        // The indicator overlay fills the whole surface; without an explicit arrange its
+        // bounds stay zero and its render is clipped away entirely.
+        _scrollOverlay.Arrange(new Rect(finalSize));
+
         ArrangeOutgoingLayers();
         return finalSize;
     }
