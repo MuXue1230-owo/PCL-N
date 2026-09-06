@@ -30,7 +30,7 @@ def windows(payload, output, work, base, version, prefix, arch):
         f"/DOutputName={base}.setup", f"/DIconPath={icon}", ROOT / "eng/release/windows.iss")
     run("wix", "build", ROOT / "eng/release/windows.wxs", "-arch", arch,
         "-d", f"Payload={payload}", "-d", f"NumericVersion={prefix}", "-d", f"IconPath={icon}",
-        "-sice", "ICE38", "-sice", "ICE64", "-sice", "ICE91",
+        "-sice:ICE38", "-sice:ICE64", "-sice:ICE91",
         "-o", work / "launcher.msi")
     shutil.copy2(work / "launcher.msi", output / f"{base}.msi")
     archive(payload, output / f"{base}.portable.zip", "PCL Nexa")
