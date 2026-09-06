@@ -227,7 +227,7 @@ public sealed class AccountService
     /// <summary>
     /// Replaces the profile at the given index and persists the whole list atomically.
     /// </summary>
-    public XsrResult ReplaceProfile(int index, LaunchProfile profile)
+    public XsrResult ReplaceProfile(int index, LaunchProfile profile, LaunchProfile? expected = null)
     {
         XsrResult validated = Validate(profile);
         if (!validated.IsSuccess)
@@ -242,6 +242,8 @@ public sealed class AccountService
                 return XsrResult.Failure(AccountErrors.ProfileNotFound(index));
             }
 
+            if (expected is not null && _profiles[index] != expected)
+                return XsrResult.Failure(AccountErrors.InvalidProfile("the account changed while refreshing its session."));
             List<LaunchProfile> updated = [.. _profiles];
             updated[index] = profile;
             XsrResult saved = Persist(updated);

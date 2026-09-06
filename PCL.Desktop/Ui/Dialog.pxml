@@ -17,6 +17,9 @@
                 HorizontalAlignment="End" Margin="24,18,24,22">
       <Button Key="DialogCancel" Label="取消" Content="取消" Command="ui.feedback.dialog.cancel"
               Width="104" Height="38" />
+      <StackPanel Key="DialogActionSpacer" Weight="1" IsVisible="false" />
+      <Button Key="DialogAlternate" Label="选择 Java" Content="选择 Java" Command="ui.feedback.dialog.alternate"
+              Width="112" Height="38" IsVisible="false" />
       <Button Key="DialogAccept" Label="继续" Content="继续" Command="ui.feedback.dialog.accept"
               Width="112" Height="38" />
     </StackPanel>

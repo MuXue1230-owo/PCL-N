@@ -104,7 +104,8 @@ public static class MinecraftRuntimeComposer
         TimeProvider? timeProvider = null,
         PCL.Services.Accounts.IAccountLaunchIdentityResolver? identityResolver = null,
         string? launcherVersion = null,
-        IMinecraftWindowProbe? windowProbe = null)
+        IMinecraftWindowProbe? windowProbe = null,
+        Action<int>? gameWindowAppeared = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentException.ThrowIfNullOrWhiteSpace(minecraftRootDirectory);
@@ -138,6 +139,10 @@ public static class MinecraftRuntimeComposer
             installer = javaInstaller;
         }
 
+        HttpClient authlibHttp = new() { Timeout = TimeSpan.FromMinutes(2) };
+        AuthlibInjectorProvider authlib = new(authlibHttp, host.Downloads);
+        owned.Add(authlibHttp);
+        owned.Add(authlib);
         MinecraftLaunchExecutor executor = new(processService, host.Logging);
         MinecraftLaunchCoordinator coordinator = new(
             minecraftRootDirectory,
@@ -153,13 +158,14 @@ public static class MinecraftRuntimeComposer
             new MinecraftLaunchProgressPublisher(host.StateStore),
             identityResolver,
             launcherVersion,
-            windowProbe);
+            windowProbe, authlib, gameWindowAppeared);
         IXsrDispatchObserver dispatchObserver = observer ?? NullDispatchObserver.Instance;
         XsrCommandRouterBuilder commandBuilder = new();
         commandBuilder.Register(MinecraftRouteIds.Start, MinecraftCommands.CreateStartHandler(coordinator));
         commandBuilder.Register(MinecraftRouteIds.Launch, MinecraftCommands.CreateLaunchHandler(executor));
         commandBuilder.Register(MinecraftRouteIds.LaunchCancel, MinecraftCommands.CreateCancelLaunchHandler(coordinator));
         commandBuilder.Register(MinecraftRouteIds.AcquireDecide, MinecraftCommands.CreateAcquireDecideHandler(coordinator));
+        commandBuilder.Register<MinecraftSelectJavaCommand>(MinecraftRouteIds.JavaSelect, (command, token) => coordinator.SelectJavaAsync(command.Path, token));
         commandBuilder.Register(MinecraftRouteIds.ProcessCancel, MinecraftCommands.CreateCancelProcessHandler(processService));
         XsrQueryRouterBuilder queryBuilder = new();
         queryBuilder.Register(MinecraftRouteIds.VersionsRead, MinecraftQueries.CreateVersionsHandler(versionDiscovery));

@@ -22,7 +22,9 @@ internal sealed record DesktopDialog(
     string Message,
     string AcceptLabel,
     string? CancelLabel,
-    Action<bool> Resolve);
+    Action<bool> Resolve,
+    string? AlternateLabel = null,
+    Action? Alternate = null);
 
 /// <summary>Thread-safe point-in-time feedback state consumed at the render boundary.</summary>
 internal sealed record DesktopFeedbackSnapshot(
@@ -178,7 +180,9 @@ internal sealed class DesktopFeedbackService : IDisposable
         string message,
         string acceptLabel,
         string cancelLabel,
-        Action<bool> resolve)
+        Action<bool> resolve,
+        string? alternateLabel = null,
+        Action? alternate = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
         ArgumentException.ThrowIfNullOrWhiteSpace(title);
@@ -187,7 +191,7 @@ internal sealed class DesktopFeedbackService : IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(cancelLabel);
         ArgumentNullException.ThrowIfNull(resolve);
 
-        return ShowDialogCore(key, title, message, acceptLabel, cancelLabel, resolve);
+        return ShowDialogCore(key, title, message, acceptLabel, cancelLabel, resolve, alternateLabel, alternate);
     }
 
     /// <summary>Shows an informational dialog with one explicit acknowledgement action.</summary>
@@ -210,7 +214,9 @@ internal sealed class DesktopFeedbackService : IDisposable
         string message,
         string acceptLabel,
         string? cancelLabel,
-        Action<bool> resolve)
+        Action<bool> resolve,
+        string? alternateLabel = null,
+        Action? alternate = null)
     {
 
         DesktopDialog? replaced = null;
@@ -231,7 +237,7 @@ internal sealed class DesktopFeedbackService : IDisposable
                 id = Guid.NewGuid();
             }
 
-            _dialog = new DesktopDialog(id, key, title, message, acceptLabel, cancelLabel, resolve);
+            _dialog = new DesktopDialog(id, key, title, message, acceptLabel, cancelLabel, resolve, alternateLabel, alternate);
         }
 
         replaced?.Resolve(false);
@@ -257,6 +263,14 @@ internal sealed class DesktopFeedbackService : IDisposable
         RaiseChanged();
         resolved.Resolve(accepted);
         return true;
+    }
+
+    public bool InvokeDialogAlternate(Guid id)
+    {
+        Action? action;
+        lock (_gate) { if (_disposed || _dialog?.Id != id) return false; action = _dialog.Alternate; }
+        action?.Invoke();
+        return action is not null;
     }
 
     /// <summary>Dismisses a dialog whose underlying state already resolved, without re-callback.</summary>

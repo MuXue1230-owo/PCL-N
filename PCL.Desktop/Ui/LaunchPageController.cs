@@ -87,6 +87,8 @@ internal sealed class LaunchPageController : IDisposable
     private int _launchInProgress;
     private int _pendingCloseLaunching;
     private Guid? _javaAcquisitionDialog;
+    private readonly Func<Task<string?>>? _pickJava;
+    private int _pickingJava;
     private bool _launchingViaKeyboard;
     private XsrUiEntityId _launchingPage;
     private Dictionary<string, XsrUiEntityId> _launchingEntities = [];
@@ -151,7 +153,8 @@ internal sealed class LaunchPageController : IDisposable
         DesktopFeedbackService feedback,
         XsrCommandRouter? accountCommands = null,
         TimeProvider? timeProvider = null,
-        IVersionDirectoryEffects? directoryEffects = null)
+        IVersionDirectoryEffects? directoryEffects = null,
+        Func<Task<string?>>? pickJava = null)
     {
         ArgumentNullException.ThrowIfNull(shell);
         ArgumentNullException.ThrowIfNull(intents);
@@ -165,6 +168,7 @@ internal sealed class LaunchPageController : IDisposable
         _foundationCommands = foundationCommands;
         _accountCommands = accountCommands;
         _timeProvider = timeProvider ?? TimeProvider.System;
+        _pickJava = pickJava;
         _store = store;
         _feedback = feedback;
         StateObserver = new LaunchingStateObserver(this);
@@ -319,7 +323,7 @@ internal sealed class LaunchPageController : IDisposable
     {
         LaunchProfileView? profile = ReadProfiles().FirstOrDefault(candidate => candidate.Index == SelectedAccountIndex);
         return profile is not { } selected
-            || selected.Kind is LaunchProfileKind.Offline or LaunchProfileKind.Microsoft;
+            || selected.Kind is LaunchProfileKind.Offline or LaunchProfileKind.Microsoft or LaunchProfileKind.LittleSkin;
     }
 
     private void OnIntentEmitted(object? sender, DesktopUiIntentEventArgs e)
@@ -534,12 +538,25 @@ internal sealed class LaunchPageController : IDisposable
         {
             Key = node.Key == "VersionSubpage" ? key : node.Key,
             Label = node.Key == "VersionSubpage" ? title : node.Label,
+            Content = node.Key == "MigrationTitle" ? title + " · 尚未迁移" : node.Content,
             Children = [.. node.Children.Select(Project)],
         };
         XsrUiEntityId parent = _shell.Tree.Create("subpage-loader");
         XsrUiEntityId page = PxmlUiLoader.Load(new PxmlHostIr(Project(template.Root)), _shell.Tree, _store, parent);
         _shell.Tree.Detach(page);
         _shell.Tree.Destroy(parent);
+        _shell.Tree.Walk(page, entity =>
+        {
+            string name = _shell.Tree.Name(entity);
+            XsrUiVisualStyle style = new() { Foreground = PrimaryText, FontSize = 14, TextAlignment = XsrUiTextAlignment.Center };
+            if (name == "MigrationCard") { style.Background = new(245, 248, 252); style.CornerRadius = 20; }
+            if (name == "MigrationTitle") { style.FontSize = 22; style.FontWeight = 600; }
+            if (name == "MigrationMessage") { style.Foreground = SecondaryText; style.WrapText = true; }
+            if (name == "MigrationIcon") style.Foreground = LaunchButtonBackground;
+            if (name == "MigrationReturn") { style.Background = LaunchButtonBackground; style.Foreground = new(255, 255, 255); style.CornerRadius = 19; }
+            _shell.Tree.SetComponent(entity, style);
+            return true;
+        });
         return page;
     }
 
@@ -1053,11 +1070,12 @@ internal sealed class LaunchPageController : IDisposable
         {
             _javaAcquisitionDialog = _feedback.ShowDialog(
                 "minecraft.java.acquire",
-                $"需要下载 Java {major}",
-                $"未找到兼容的 Java {major} 运行库（{component}）。启动游戏前需要下载，是否继续？",
+                $"需要 Java {major}",
+                $"未找到兼容的 Java {major}。请选择已安装的 Java，或自动下载。",
                 "自动下载",
-                "取消下载",
-                approve => _ = DecideAcquisitionAsync(approve));
+                "取消",
+                approve => _ = DecideAcquisitionAsync(approve),
+                "选择 Java", () => _ = SelectJavaFileAsync());
         }
         else if (!pending && _javaAcquisitionDialog is { } dialog)
         {
@@ -1075,6 +1093,24 @@ internal sealed class LaunchPageController : IDisposable
 
         _feedback.DismissDialog(dialog);
         _javaAcquisitionDialog = null;
+    }
+
+    private async Task SelectJavaFileAsync()
+    {
+        if (_pickJava is null || Interlocked.Exchange(ref _pickingJava, 1) != 0) return;
+        Guid? dialog = _javaAcquisitionDialog;
+        try
+        {
+            string? path = await _pickJava().ConfigureAwait(false);
+            if (_disposed || path is null || dialog != _javaAcquisitionDialog || _launchInProgress == 0) return;
+            if (!_minecraft.Commands.TryResolve(MinecraftRouteIds.JavaSelect, out XsrCommandId route)) return;
+            XsrResult result = await _minecraft.Commands.Dispatch(route, new MinecraftSelectJavaCommand(path),
+                cancellationToken: _lifetimeCancellation.Token).Completion.ConfigureAwait(false);
+            if (!_disposed && !result.IsSuccess) _feedback.Error(result.Error?.Message ?? "无法使用所选 Java。");
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
+        { if (!_disposed) _feedback.Error("无法选择 Java，请重试。"); }
+        finally { Interlocked.Exchange(ref _pickingJava, 0); }
     }
 
     private string ReadServiceCell(XsrSemanticId key) =>
@@ -1216,7 +1252,7 @@ internal sealed class LaunchPageController : IDisposable
             AlignText(entities, key, XsrUiTextAlignment.Center);
         foreach (string key in new[] { "AccountSwitch", "AccountWardrobe" })
         {
-            ApplyVisual(entities[key], BadgeBackground, BadgeText, XsrUiCornerRadii.Pill(36), hover: new XsrUiColor(207, 225, 254), hoverExpand: true);
+            ApplyVisual(entities[key], DesktopUiPalette.CapsuleBackground, DesktopUiPalette.CapsuleForeground, XsrUiCornerRadii.Pill(36), hover: DesktopUiPalette.CapsuleHover, hoverExpand: true);
             StyleText(entities, key, BadgeText, 13, 600);
         }
         StyleText(entities, "VersionAction", SecondaryText, fontSize: 11);
@@ -1354,24 +1390,7 @@ internal sealed class LaunchPageController : IDisposable
         return visual;
     }
 
-    private XsrUiEntityId BuildPlaceholderPage()
-    {
-        XsrUiTree tree = _shell.Tree;
-        XsrUiEntityId page = tree.Create("placeholder-page");
-        tree.SetComponent(page, new XsrUiStackPanel(XsrUiOrientation.Vertical) { Spacing = 12 });
-        tree.SetComponent(page, new XsrUiSemantic(XsrUiSemanticRole.Page, "建设中"));
-        XsrUiEntityId text = tree.Create("placeholder-text");
-        tree.SetComponent(text, new XsrUiText("该分区将在后续单元中迁移。"));
-        tree.SetComponent(text, new XsrUiSemantic(XsrUiSemanticRole.Text, "建设中"));
-        tree.SetComponent(text, new XsrUiVisualStyle
-        {
-            Foreground = SecondaryText,
-            FontSize = 14,
-        });
-        tree.Attach(text, page);
-        tree.MarkDirty(page, XsrUiDirtyKinds.Structure);
-        return page;
-    }
+    private XsrUiEntityId BuildPlaceholderPage() => LoadVersionSubpage("placeholder-page", "此功能");
 
     private static string ReadEmbeddedResource(string suffix)
     {

@@ -8,6 +8,7 @@ using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Input.TextInput;
 using Avalonia.Media;
+using Avalonia.Threading;
 using PCL.UI.Next;
 
 namespace PCL.UI.Next.Backend.Avalonia;
@@ -116,11 +117,15 @@ internal sealed partial class AvaloniaUiSceneNodeControl
     private AvaloniaUiTextInputActions? _textActions;
     private SceneInputMethodClient? _inputMethod;
     private double _textOffset;
+    private DispatcherTimer? _caretTimer;
+    private bool _caretVisible = true;
     internal Rect TextCursorRectangle { get; private set; }
 
     private void InitializeTextInput(AvaloniaUiTextInputActions? actions)
     {
         _textActions = actions;
+        GotFocus += (_, _) => ResetCaret();
+        LostFocus += (_, _) => StopCaret();
         TextInputMethodClientRequested += (_, e) =>
         {
             if (_node.TextInput is null) return;
@@ -129,6 +134,19 @@ internal sealed partial class AvaloniaUiSceneNodeControl
         };
     }
 
+    private void ResetCaret()
+    {
+        StopCaret();
+        _caretVisible = true;
+        if (_node.TextInput is null || !_node.IsFocused || !IsFocused) return;
+        _caretTimer ??= new DispatcherTimer(TimeSpan.FromMilliseconds(530), DispatcherPriority.Background,
+            (_, _) => { _caretVisible = !_caretVisible; InvalidateVisual(); });
+        _caretTimer.Start();
+        InvalidateVisual();
+    }
+
+    private void StopCaret() { _caretTimer?.Stop(); _caretVisible = false; InvalidateVisual(); }
+
     private void UpdateTextInput(XsrUiTextInputSnapshot? before, XsrUiTextInputSnapshot? after)
     {
         if (after is not { } input) return;
@@ -136,6 +154,7 @@ internal sealed partial class AvaloniaUiSceneNodeControl
         TextInputOptions.SetShowSuggestions(this, !input.IsPassword);
         TextInputOptions.SetMultiline(this, false);
         if (before == after) return;
+        ResetCaret();
         _inputMethod?.NotifyChanged();
         if (!input.IsPassword && ControlAutomationPeer.FromElement(this) is { } peer)
             peer.RaisePropertyChangedEvent(ValuePatternIdentifiers.ValueProperty, before?.DisplayText, input.DisplayText);
@@ -193,7 +212,8 @@ internal sealed partial class AvaloniaUiSceneNodeControl
             context.DrawText(formatted, new Point(x, y));
             if (_node.IsFocused)
             {
-                context.DrawRectangle(Brush(new XsrUiColor(11, 91, 203)), null, cursorRect);
+                if (_caretVisible || input.Preedit.Length > 0)
+                    context.DrawRectangle(Brush(new XsrUiColor(11, 91, 203)), null, cursorRect);
                 if (input.Preedit.Length > 0)
                 {
                     double from = FormatInput(text[..caret]).WidthIncludingTrailingWhitespace;

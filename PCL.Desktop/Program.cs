@@ -207,7 +207,10 @@ internal static class Program
             minecraftRootDirectory,
             identityResolver: accounts.LaunchIdentityResolver,
             observer: operationLog.Dispatch,
-            launcherVersion: buildInfo.SemanticVersion);
+            launcherVersion: buildInfo.SemanticVersion,
+            gameWindowAppeared: pid => MinecraftWindowIntegration.DetachGameWindows(
+                pid,
+                "PCL-Nexa.Minecraft." + pid.ToString(System.Globalization.CultureInfo.InvariantCulture)));
         host.Logging.Debug(
             "Launcher",
             $"Runtime composition completed services={runtime.Host.Services.Count} "
@@ -242,7 +245,7 @@ internal static class Program
             runtime.Commands,
             runtime.Host.StateStore,
             library, feedback, accountCommands: accounts.Commands,
-            directoryEffects: new NativeVersionDirectoryEffects(platformActions));
+            directoryEffects: new NativeVersionDirectoryEffects(platformActions), pickJava: platformActions.PickJavaFileAsync);
         using AccountFormController accountForm = new(shell, uiIntents, accounts.Commands,
             runtime.Host.StateStore, launchPage.AccountBody, feedback,
             new NativeAccountUiEffects(platformActions), runtime.Host.Logging);

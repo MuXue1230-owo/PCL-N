@@ -179,14 +179,14 @@ internal static partial class Program
 
         Emit(fixture.Intents, "ui.navigation.settings");
         XsrUiScene placeholder = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertTrue(placeholder.Nodes.Any(node => node.Text == "该分区将在后续单元中迁移。"));
+        AssertTrue(placeholder.Nodes.Any(node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
         AssertFalse(HasKey(fixture.Shell, placeholder, "LaunchButton"));
 
         Emit(fixture.Intents, "ui.navigation.launch");
         fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         XsrUiScene launch = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(HasKey(fixture.Shell, launch, "LaunchButton"));
-        AssertFalse(launch.Nodes.Any(node => node.Text == "该分区将在后续单元中迁移。"));
+        AssertFalse(launch.Nodes.Any(node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
     }
 
     private static void DownloadAndInstanceActionsRouteToVersionManagement()
@@ -197,7 +197,7 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.launch.primary");
         AssertEqual(XsrSemanticId.Parse("navigation.download"), fixture.Shell.SelectedNavigationId);
         AssertTrue(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(
-            node => node.Text == "该分区将在后续单元中迁移。"));
+            node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
         AssertTrue(fixture.Feedback.Snapshot().Notifications.Any(notification =>
             notification.Level == DesktopNotificationLevel.Info
             && notification.Message == "请在安装页选择或下载游戏版本。"));
@@ -288,7 +288,7 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.navigation.expand");
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(HasKey(fixture.Shell, scene, "LaunchButton"));
-        AssertFalse(scene.Nodes.Any(node => node.Text == "该分区将在后续单元中迁移。"));
+        AssertFalse(scene.Nodes.Any(node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
     }
 
     private static void AccountCardListsProfilesAndSwitchesSelection()

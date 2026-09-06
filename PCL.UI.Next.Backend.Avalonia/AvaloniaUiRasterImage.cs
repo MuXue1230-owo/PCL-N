@@ -29,6 +29,7 @@ internal sealed partial class AvaloniaUiSceneNodeControl
 
     internal void ReleasePresentation()
     {
+        StopCaret();
         AvaloniaUiMotion.CancelAll(this);
         _rasterBitmap?.Dispose(); _rasterBitmap = null; _rasterKey = null;
     }

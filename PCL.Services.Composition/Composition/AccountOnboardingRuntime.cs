@@ -34,8 +34,10 @@ public static class AccountOnboardingRuntimeComposer
         IMicrosoftMinecraftAuthService microsoftService =
             microsoft ?? new MicrosoftMinecraftAuthService(http, log: host.Logging);
         AccountOnboardingOptions resolvedOptions = options ?? AccountOnboardingOptions.FromEnvironment();
+        ILittleSkinOAuthService littleSkinService = littleSkin ?? new LittleSkinOAuthService(http, host.Logging);
+        YggdrasilAuthService yggdrasil = new(http, host.Logging);
         AccountOnboardingService service = new(host.Accounts, microsoftService,
-            littleSkin ?? new LittleSkinOAuthService(http, host.Logging), new YggdrasilAuthService(http, host.Logging),
+            littleSkinService, yggdrasil,
             resolvedOptions, imports, host.Logging);
         XsrCommandRouterBuilder commands = new();
         AccountSkinService skins = new(host.Accounts, http, host.Logging);
@@ -50,7 +52,7 @@ public static class AccountOnboardingRuntimeComposer
             host.Accounts,
             microsoftService,
             resolvedOptions.MicrosoftClientId,
-            host.Logging);
+            host.Logging, littleSkinService, resolvedOptions.LittleSkin, yggdrasil);
         return new(service, commands.Build(observer ?? new Observer()), client is null ? http : null, skins, resolver);
     }
     private sealed class Observer : IXsrDispatchObserver { public void OnCompleted(XsrDispatchObservation observation) { } }

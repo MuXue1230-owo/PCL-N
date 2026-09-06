@@ -72,7 +72,7 @@
             <VerticalPager Key="LaunchWidgetPager" Label="启动页信息卡片，可使用上下方向键翻页" Weight="1">
               <StackPanel Orientation="Vertical" Spacing="8" Key="AboutCopy">
                 <Text Key="AboutTitle" Content="关于 PCL N Edition" Height="24" />
-                <Text Key="AboutMessage" Content="PCL N Edition 与官方 PCL 项目独立维护，部分功能与行为可能有所不同。" Height="56" />
+                <Text Key="AboutMessage" Content="让每一次出发都更简单。PCL N 是由社区独立维护的跨平台 Minecraft 启动器。" Height="56" />
               </StackPanel>
               <Button Key="TriviaPage" Label="你知道吗？点击换一条" Command="ui.launch.hint.refresh">
                 <StackPanel Orientation="Vertical" Spacing="8">

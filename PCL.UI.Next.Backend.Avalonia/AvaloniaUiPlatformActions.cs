@@ -88,4 +88,20 @@ public sealed class AvaloniaUiPlatformActions
         using IStorageFolder? folder = folders.Count > 0 ? folders[0] : null;
         return folder?.TryGetLocalPath();
     }
+
+    public Task<string?> PickJavaFileAsync() => Dispatcher.UIThread.CheckAccess()
+        ? PickJavaOnUiThreadAsync() : Dispatcher.UIThread.InvokeAsync(PickJavaOnUiThreadAsync);
+
+    private async Task<string?> PickJavaOnUiThreadAsync()
+    {
+        if (_owner?.StorageProvider is not { } storage) throw new InvalidOperationException("The native file picker is not ready.");
+        IReadOnlyList<IStorageFile> files = await storage.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择 Java 可执行文件",
+            AllowMultiple = false,
+            FileTypeFilter = [new FilePickerFileType("Java") { Patterns = OperatingSystem.IsWindows() ? ["java.exe", "javaw.exe"] : ["java"] }],
+        });
+        using IStorageFile? file = files.Count > 0 ? files[0] : null;
+        return file?.TryGetLocalPath();
+    }
 }

@@ -529,6 +529,13 @@ public sealed class JavaSelectionService(IJavaRuntimeLocator locator)
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(preference);
         JavaRequirementResolution requirement = MinecraftJavaRequirementResolver.Resolve(request);
+        return await SelectAsync(requirement, preference, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<JavaSelectionResult> SelectAsync(JavaRequirementResolution requirement, JavaPreference preference, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(requirement);
+        ArgumentNullException.ThrowIfNull(preference);
         if (!requirement.Success)
             return new JavaSelectionResult { Success = false, Requirement = requirement, FailureReason = JavaSelectionFailureReason.InvalidVersionMetadata, Detail = requirement.Detail };
 

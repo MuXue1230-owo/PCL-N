@@ -68,9 +68,13 @@ public sealed class MinecraftLaunchCoordinator
     private readonly IAccountLaunchIdentityResolver _identityResolver;
     private readonly string _launcherVersion;
     private readonly IMinecraftWindowProbe _windowProbe;
+    private readonly Action<int>? _gameWindowAppeared;
     private readonly object _launchGate = new();
     private CancellationTokenSource? _activeLaunch;
-    private TaskCompletionSource<bool>? _acquisitionDecision;
+    private sealed record JavaChoice(bool Approve, ResolvedJava? Manual = null);
+    private TaskCompletionSource<JavaChoice>? _acquisitionDecision;
+    private JavaRequirementResolution? _pendingJavaRequirement;
+    private readonly IAuthlibInjectorProvider? _authlib;
 
     public MinecraftLaunchCoordinator(
         string minecraftRootDirectory,
@@ -86,7 +90,9 @@ public sealed class MinecraftLaunchCoordinator
         MinecraftLaunchProgressPublisher? progress = null,
         IAccountLaunchIdentityResolver? identityResolver = null,
         string? launcherVersion = null,
-        IMinecraftWindowProbe? windowProbe = null)
+        IMinecraftWindowProbe? windowProbe = null,
+        IAuthlibInjectorProvider? authlib = null,
+        Action<int>? gameWindowAppeared = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(minecraftRootDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(javaRuntimeRootDirectory);
@@ -97,6 +103,8 @@ public sealed class MinecraftLaunchCoordinator
         _identityResolver = identityResolver ?? new AccountLaunchIdentityResolver(accounts, log: log);
         _launcherVersion = string.IsNullOrWhiteSpace(launcherVersion) ? "2.0.0" : launcherVersion;
         _windowProbe = windowProbe ?? new MinecraftWindowProbe();
+        _gameWindowAppeared = gameWindowAppeared;
+        _authlib = authlib;
         _instances = instances ?? throw new ArgumentNullException(nameof(instances));
         _accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         _settings = settings ?? throw new ArgumentNullException(nameof(settings));
@@ -118,7 +126,7 @@ public sealed class MinecraftLaunchCoordinator
     /// </summary>
     public bool DecideJavaAcquisition(bool approve)
     {
-        TaskCompletionSource<bool>? decision;
+        TaskCompletionSource<JavaChoice>? decision;
         lock (_launchGate)
         {
             decision = _acquisitionDecision;
@@ -131,7 +139,25 @@ public sealed class MinecraftLaunchCoordinator
         }
 
         _log?.Info("Java", $"Runtime acquisition decision approve={approve}.");
-        return decision.TrySetResult(approve);
+        return decision.TrySetResult(new(approve));
+    }
+
+    public async ValueTask<XsrResult> SelectJavaAsync(string path, CancellationToken cancellationToken = default)
+    {
+        TaskCompletionSource<JavaChoice>? decision;
+        JavaRequirementResolution? requirement;
+        lock (_launchGate) { decision = _acquisitionDecision; requirement = _pendingJavaRequirement; }
+        if (decision is null || requirement is null) return XsrResult.Failure(MinecraftErrors.InvalidRequest("no Java choice is pending."));
+        JavaSelectionResult selection = await _javaSelection.SelectAsync(requirement, new ExistingJavaPreference(path), cancellationToken).ConfigureAwait(false);
+        if (!selection.Success || selection.SelectedJava is not { } java)
+            return XsrResult.Failure(MinecraftErrors.JavaUnavailable("所选 Java 不满足此版本要求，请选择兼容的 Java。"));
+        lock (_launchGate)
+        {
+            if (!ReferenceEquals(_acquisitionDecision, decision) || !decision.TrySetResult(new(false,
+                new ResolvedJava(SelectExecutable(java.Installation), java.Installation.MajorVersion))))
+                return XsrResult.Failure(MinecraftErrors.InvalidRequest("the pending Java choice changed."));
+        }
+        return XsrResult.Success();
     }
 
     /// <summary>
@@ -295,6 +321,13 @@ public sealed class MinecraftLaunchCoordinator
                 loader,
                 identityResult.Value,
                 resolvedJava.Value, root);
+            if (identityResult.Value.AuthServer is { } authServer)
+            {
+                if (_authlib is null) throw new InvalidOperationException("Authlib Injector preparation is not composed.");
+                operation?.Stage("prepare_authlib_injector");
+                string injector = await _authlib.EnsureAsync(root, cancellationToken).ConfigureAwait(false);
+                request = request with { AuthlibServer = authServer, AuthlibInjectorPath = injector };
+            }
             operation?.Complete($"instance={instance.Id} memory_mb={request.MemoryMegabytes}");
             return XsrResult.Success(new MinecraftLaunchPreparation(
                 instance,
@@ -552,13 +585,14 @@ public sealed class MinecraftLaunchCoordinator
     private ValueTask<GameWindowWaitResult> WaitForGameWindowAsync(
         Process.MinecraftProcessSession session,
         CancellationToken cancellationToken) =>
-        WaitForGameWindowAsync(_windowProbe, _log, session, cancellationToken);
+        WaitForGameWindowAsync(_windowProbe, _log, session, cancellationToken, _gameWindowAppeared);
 
     internal static async ValueTask<GameWindowWaitResult> WaitForGameWindowAsync(
         IMinecraftWindowProbe windowProbe,
         LogService? log,
         Process.MinecraftProcessSession session,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<int>? gameWindowAppeared = null)
     {
         int processId = session.Snapshot.ProcessId;
         long startedAt = System.Diagnostics.Stopwatch.GetTimestamp();
@@ -581,6 +615,9 @@ public sealed class MinecraftLaunchCoordinator
             if (probe == MinecraftWindowProbeResult.Visible)
             {
                 log?.Info("Launch", $"Game window confirmed pid={processId}.");
+                // The window exists now: the host detaches it from the launcher's taskbar group
+                // while the game keeps its own icon. Calling earlier races window creation.
+                gameWindowAppeared?.Invoke(processId);
                 return GameWindowWaitResult.Visible;
             }
 
@@ -694,11 +731,13 @@ public sealed class MinecraftLaunchCoordinator
                 $"no compatible Java runtime is installed and automatic acquisition is blocked ({acquisition.BlockReason})."));
         }
 
-        if (!await RequestAcquisitionApprovalAsync(
+        JavaChoice choice = await RequestAcquisitionApprovalAsync(
                 acquisition,
                 JavaMajor(selection.Requirement.Range.Minimum),
                 operation,
-                cancellationToken).ConfigureAwait(false))
+                selection.Requirement, cancellationToken).ConfigureAwait(false);
+        if (choice.Manual is { } manual) return XsrResult.Success(manual);
+        if (!choice.Approve)
         {
             return XsrResult.Failure<ResolvedJava>(MinecraftErrors.JavaUnavailable(
                 "the Java runtime acquisition was declined."));
@@ -725,16 +764,18 @@ public sealed class MinecraftLaunchCoordinator
     /// pauses with the acquisition cells published until a decision command or cancellation
     /// resolves it.
     /// </summary>
-    private async ValueTask<bool> RequestAcquisitionApprovalAsync(
+    private async ValueTask<JavaChoice> RequestAcquisitionApprovalAsync(
         JavaRuntimeAcquisitionDecision acquisition,
         int majorVersion,
         LogOperation? operation,
+        JavaRequirementResolution requirement,
         CancellationToken cancellationToken)
     {
-        TaskCompletionSource<bool> decision = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<JavaChoice> decision = new(TaskCreationOptions.RunContinuationsAsynchronously);
         lock (_launchGate)
         {
             _acquisitionDecision = decision;
+            _pendingJavaRequirement = requirement;
         }
         _progress?.RequestAcquisition(acquisition.DownloadComponent ?? "unknown", majorVersion);
         _log?.Info("Java", $"Runtime acquisition awaiting approval component={acquisition.DownloadComponent}.");
@@ -749,6 +790,7 @@ public sealed class MinecraftLaunchCoordinator
                 if (ReferenceEquals(_acquisitionDecision, decision))
                 {
                     _acquisitionDecision = null;
+                    _pendingJavaRequirement = null;
                 }
             }
 

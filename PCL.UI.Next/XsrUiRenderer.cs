@@ -222,13 +222,19 @@ public sealed partial class XsrUiRenderer
 
     private void Layout(XsrUiEntityId entity, XsrUiRect slot)
     {
+        if (_tree.GetComponent<XsrUiAnchoredOverlay>(entity) is { } anchor && _tree.IsAlive(anchor.Anchor)
+            && _paintRects.TryGetValue(anchor.Anchor.Index, out XsrUiRect bounds))
+        {
+            double top = bounds.Y + bounds.Height + anchor.Gap;
+            slot = new(bounds.X, top, bounds.Width, Math.Max(0, slot.Y + slot.Height - top));
+        }
         // Measure caching and arrange caching are separate concerns: a clean subtree keeps its
         // measured sizes, but any entity whose input slot moved must re-arrange, even when the
         // entity itself is clean — otherwise siblings keep stale coordinates.
         bool subtreeClean = !_tree.HasDirtyLayoutSubtree(entity);
         bool slotUnchanged = _arrangedSlots.TryGetValue(entity.Index, out XsrUiRect previous) && previous == slot;
         bool arranged = _paintRects.ContainsKey(entity.Index);
-        if (subtreeClean && slotUnchanged && arranged)
+        if (subtreeClean && slotUnchanged && arranged && _tree.GetComponent<XsrUiOverlayLayer>(entity) is null)
         {
             return;
         }
@@ -808,6 +814,13 @@ public sealed partial class XsrUiRenderer
             return true;
         }
 
+        if (_focused.IsAssigned && _tree.GetComponent<XsrUiTextInput>(_focused) is not null)
+        {
+            XsrUiInput? focusedInput = _tree.GetComponent<XsrUiInput>(_focused);
+            if (focusedInput is not null) { focusedInput.IsFocused = false; focusedInput.IsFocusVisible = false; }
+            _tree.MarkDirty(_focused, XsrUiDirtyKinds.Paint);
+            _focused = default;
+        }
         return pagerGesture;
     }
 

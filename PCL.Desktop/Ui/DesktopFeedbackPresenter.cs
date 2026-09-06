@@ -397,6 +397,8 @@ internal sealed class DesktopFeedbackPresenter : IDisposable
         SetStyle(entities["DialogAccept"], new XsrUiColor(11, 91, 203), new XsrUiColor(255, 255, 255),
             XsrUiColor.Transparent, XsrUiCornerRadii.Pill(38), hover: new XsrUiColor(19, 112, 243),
             fontSize: 14, fontWeight: 600, centered: true);
+        SetStyle(entities["DialogAlternate"], new XsrUiColor(238, 242, 247), new XsrUiColor(52, 61, 74),
+            XsrUiColor.Transparent, 19, hover: new XsrUiColor(224, 230, 238), fontSize: 14, fontWeight: 600, centered: true);
 
         PresentedDialog presented = new(dialog, root, entities["DialogCard"], entities["DialogAccept"],
             entities["DialogCancel"], scrimMotion, cardMotion, previousFocus, focusVisible);
@@ -412,6 +414,11 @@ internal sealed class DesktopFeedbackPresenter : IDisposable
         SetText(entities["DialogTitle"], dialog.Title);
         SetText(entities["DialogMessage"], dialog.Message);
         SetText(presented.Accept, dialog.AcceptLabel);
+        bool alternate = dialog.Alternate is not null && !string.IsNullOrWhiteSpace(dialog.AlternateLabel);
+        SetVisible(entities["DialogAlternate"], alternate);
+        SetVisible(entities["DialogActionSpacer"], alternate);
+        _shell.Tree.GetComponent<XsrUiElement>(entities["DialogActions"])!.HorizontalAlignment = alternate ? XsrUiAlignment.Stretch : XsrUiAlignment.End;
+        if (alternate) { SetText(entities["DialogAlternate"], dialog.AlternateLabel!); _shell.Tree.GetComponent<XsrUiSemantic>(entities["DialogAlternate"])!.Label = dialog.AlternateLabel; }
         bool hasCancel = !string.IsNullOrWhiteSpace(dialog.CancelLabel);
         if (hasCancel)
         {
@@ -507,6 +514,7 @@ internal sealed class DesktopFeedbackPresenter : IDisposable
 
         if (_dialog is { IsClosing: false } dialog)
         {
+            if (e.Intent.Command.Value == "ui.feedback.dialog.alternate") { _service.InvokeDialogAlternate(dialog.Value.Id); return; }
             if (e.Intent.Command == DialogAccept)
             {
                 _service.ResolveDialog(dialog.Value.Id, accepted: true);

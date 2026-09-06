@@ -6,8 +6,7 @@ namespace PCL.Services.Accounts;
 
 /// <summary>
 /// Resolves the launch identity for one persisted profile. Account-provider specifics live
-/// here — offline derivation, Microsoft token refresh, and the honest refusal for provider
-/// kinds whose launch preparation (Authlib Injector) has not migrated — so the launch
+/// here — offline derivation, Microsoft token refresh, and LittleSkin game sessions — so the launch
 /// coordinator never grows provider-specific branches.
 /// </summary>
 public interface IAccountLaunchIdentityResolver
@@ -21,15 +20,17 @@ public interface IAccountLaunchIdentityResolver
 /// <summary>
 /// Default resolver. Microsoft profiles refresh through the injected auth service when one is
 /// composed (the refreshed credentials persist back into the roster); without that capability
-/// the persisted access token is used as-is and the gap is logged. LittleSkin, third-party
-/// Authlib Injector, and NCloud profiles refuse with a stable error until their launch
-/// preparation migrates.
+/// the persisted access token is used as-is and the gap is logged. LittleSkin resolves a
+/// Yggdrasil game session separately from its provider OAuth credentials.
 /// </summary>
 public sealed class AccountLaunchIdentityResolver(
     AccountService accounts,
     IMicrosoftMinecraftAuthService? microsoft = null,
     string? microsoftClientId = null,
-    LogService? log = null) : IAccountLaunchIdentityResolver
+    LogService? log = null,
+    ILittleSkinOAuthService? littleSkin = null,
+    LittleSkinOAuthConfiguration? littleSkinConfiguration = null,
+    YggdrasilAuthService? yggdrasil = null) : IAccountLaunchIdentityResolver
 {
     private readonly AccountService _accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
 
@@ -52,11 +53,71 @@ public sealed class AccountLaunchIdentityResolver(
             case LaunchProfileKind.Microsoft:
                 return await ResolveMicrosoftAsync(accountIndex, profile, cancellationToken).ConfigureAwait(false);
 
+            case LaunchProfileKind.LittleSkin:
+                return await ResolveLittleSkinAsync(accountIndex, profile, cancellationToken).ConfigureAwait(false);
+
             default:
                 log?.Info("Account", $"Profile kind cannot launch yet kind={profile.Kind}.");
                 return XsrResult.Failure<MinecraftLaunchIdentity>(AccountErrors.LaunchNotSupported(
                     profile.Kind,
                     "Authlib Injector launch preparation has not migrated for this account kind yet."));
+        }
+    }
+
+    private async ValueTask<XsrResult<MinecraftLaunchIdentity>> ResolveLittleSkinAsync(int index, LaunchProfile profile, CancellationToken token)
+    {
+        if (yggdrasil is null || string.IsNullOrWhiteSpace(profile.Uuid))
+            return XsrResult.Failure<MinecraftLaunchIdentity>(AccountErrors.LaunchNotSupported(profile.Kind, "LittleSkin launch authentication is unavailable; sign in again."));
+        const string server = LittleSkinOAuthService.YggdrasilServer;
+        try
+        {
+            bool valid = await yggdrasil.ValidateAsync(server, profile.AccessToken, profile.ClientToken, token).ConfigureAwait(false);
+            token.ThrowIfCancellationRequested();
+            if (!valid)
+            {
+                LaunchProfile updated;
+                if (littleSkin is not null && !string.IsNullOrWhiteSpace(profile.ProviderAccessToken))
+                {
+                    string providerToken = profile.ProviderAccessToken;
+                    if (profile.ProviderTokenExpiresAtUnix <= DateTimeOffset.UtcNow.AddMinutes(2).ToUnixTimeSeconds())
+                    {
+                        if (littleSkinConfiguration is null || string.IsNullOrWhiteSpace(profile.RefreshToken))
+                            throw new InvalidOperationException("LittleSkin OAuth needs a new login.");
+                        LittleSkinOAuthTokens refreshed = await littleSkin.RefreshOAuthTokenAsync(littleSkinConfiguration, profile.RefreshToken, token).ConfigureAwait(false);
+                        LaunchProfile refreshedProfile = profile with
+                        {
+                            ProviderAccessToken = refreshed.AccessToken,
+                            RefreshToken = refreshed.RefreshToken,
+                            ProviderTokenExpiresAtUnix = refreshed.ExpiresAt.ToUnixTimeSeconds()
+                        };
+                        XsrResult saved = _accounts.ReplaceProfile(index, refreshedProfile, profile);
+                        if (!saved.IsSuccess) return XsrResult.Failure<MinecraftLaunchIdentity>(saved.Error!);
+                        profile = refreshedProfile;
+                        providerToken = refreshed.AccessToken;
+                    }
+                    LittleSkinMinecraftSession session = await littleSkin.CreateMinecraftSessionAsync(providerToken, profile.Uuid, token).ConfigureAwait(false);
+                    updated = profile with { Username = session.Username, Uuid = session.Uuid, AccessToken = session.AccessToken, ClientToken = session.ClientToken };
+                }
+                else
+                {
+                    YggdrasilAuthLoginResult session = await yggdrasil.RefreshAsync(server, profile.AccessToken, profile.ClientToken, token).ConfigureAwait(false);
+                    updated = profile with { Username = session.Username, Uuid = session.Uuid, AccessToken = session.AccessToken, ClientToken = session.ClientToken };
+                }
+                if (!string.Equals(updated.Uuid, profile.Uuid, StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(updated.AccessToken))
+                    throw new InvalidOperationException("LittleSkin returned a different character or an empty game session.");
+                XsrResult persisted = _accounts.ReplaceProfile(index, updated, profile);
+                if (!persisted.IsSuccess) return XsrResult.Failure<MinecraftLaunchIdentity>(persisted.Error!);
+                profile = updated;
+            }
+            if (_accounts.GetProfile(index).Value != profile)
+                return XsrResult.Failure<MinecraftLaunchIdentity>(AccountErrors.InvalidProfile("The profile changed during launch authentication."));
+            return XsrResult.Success(new MinecraftLaunchIdentity(profile.Username, profile.Uuid, profile.AccessToken, MinecraftLaunchIdentityMode.ThirdParty)
+            { AuthServer = server });
+        }
+        catch (Exception failure) when (failure is HttpRequestException or InvalidOperationException or ArgumentException)
+        {
+            log?.Warn("Account", "LittleSkin launch session could not be refreshed.");
+            return XsrResult.Failure<MinecraftLaunchIdentity>(AccountErrors.LaunchNotSupported(profile.Kind, "LittleSkin session expired or unavailable; sign in again."));
         }
     }
 

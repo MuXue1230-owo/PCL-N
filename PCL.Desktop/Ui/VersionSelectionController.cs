@@ -68,6 +68,7 @@ internal sealed class VersionSelectionController : IDisposable
         _dropdown = PxmlUiLoader.Load(Load("VersionDirectoryDropdown.pxml"), shell.Tree, store, Page);
         shell.Tree.Walk(_dropdown, entity => { _entities[shell.Tree.Name(entity)] = entity; Style(entity); return true; });
         shell.Tree.Detach(_dropdown);
+        shell.Tree.SetComponent(_entities["LibraryDropdownCard"], new XsrUiAnchoredOverlay(_entities["LibraryChooseDirectory"]));
         shell.Tree.SetComponent(_dropdown, new XsrUiOverlayLayer(isModal: true));
         shell.Tree.SetComponent(_dropdown, new XsrUiDismissBinding(XsrSemanticId.Parse("ui.versions.dismiss")));
         shell.Tree.GetComponent<XsrUiInput>(_entities["LibraryDropdownDismiss"])!.Focusable = false;
@@ -178,18 +179,10 @@ internal sealed class VersionSelectionController : IDisposable
             // tall enough that the list does NOT overflow — an under-sized card makes
             // CanScrollVertically true and paints a full-height track for a two-row list.
             double height = Math.Min(
-                snapshot.Directories.Count * 48 + (4 * Math.Max(0, snapshot.Directories.Count - 1)) + 16
+                snapshot.Directories.Count * 48 + (4 * Math.Max(0, snapshot.Directories.Count - 1)) + 8
                 + (_editingRoot is null ? 0 : 44) + (_manualAdd ? 44 : 0),
                 Math.Max(96, _shell.Renderer.Viewport.Height - 160));
             XsrUiElement card = _shell.Tree.GetComponent<XsrUiElement>(_entities["LibraryDropdownCard"])!;
-            // The card matches the directory button's width: viewport width minus the chrome
-            // margins (28), the navigation rail (48 collapsed / 120 expanded + 14 gap), the
-            // caption (76), and the add-folder button with spacings (136).
-            double railWidth = _shell.IsNavigationExpanded
-                ? XsrUiShell.ExpandedRailWidth
-                : XsrUiShell.CollapsedRailWidth;
-            double width = Math.Max(320, _shell.Renderer.Viewport.Width - railWidth - 226);
-            if (card.Width != width) { card.Width = width; _shell.Tree.MarkDirty(_dropdown, XsrUiDirtyKinds.Layout); }
             if (card.Height != height) { card.Height = height; _shell.Tree.MarkDirty(_dropdown, XsrUiDirtyKinds.Layout); }
         }
         if (_root != snapshot.RootDirectory)
@@ -222,10 +215,6 @@ internal sealed class VersionSelectionController : IDisposable
         Publish("add.visible", manualAdd); Publish("rename.visible", false);
         if (!_chooseDirectories) _shell.Tree.Attach(_dropdown, _entities["LibraryContent"]);
         _chooseDirectories = true; _revision = -1;
-        // The card matches the directory button's width: viewport width minus the chrome
-        // margins (28), the caption (76), and the add-folder button with spacings (136).
-        XsrUiElement card = _shell.Tree.GetComponent<XsrUiElement>(_entities["LibraryDropdownCard"])!;
-        card.Width = Math.Max(320, _shell.Renderer.Viewport.Width - 240);
         if (manualAdd) _shell.Renderer.Focus(_entities["LibraryDirectoryInput"], keyboard);
         else FocusDirectory();
     }
@@ -368,8 +357,10 @@ internal sealed class VersionSelectionController : IDisposable
         if (key is "LibraryRowSelected" or "LibraryRowCheck" or "LibraryFolderIcon" or "LibraryRowIcon") { style.Foreground = Blue; style.FontSize = 12; style.FontWeight = 600; }
         if (_shell.Tree.GetComponent<XsrUiInput>(entity) is not null)
         { style.Hover = new(237, 243, 253); if (key is not "LibraryRow" and not "LibraryChooseDirectory" and not "LibraryDirectoryRow") { style.Background = new(240, 244, 250); style.FontSize = 13; } }
-        if (key is "LibraryAddDirectory" or "LibraryAddPath") { style.Background = Blue; style.Foreground = new(255, 255, 255); style.Hover = new(23, 110, 225); }
+        if (key == "LibraryAddPath") { style.Background = Blue; style.Foreground = new(255, 255, 255); style.Hover = new(23, 110, 225); }
         if (key == "LibraryDropdownDismiss") { style.Background = XsrUiColor.Transparent; style.Hover = XsrUiColor.Transparent; }
+        if (key is "LibraryAddDirectory" or "LibraryRefresh") { style.HoverExpand = true; style.CornerRadius = key == "LibraryAddDirectory" ? 20 : 18; style.TextAlignment = XsrUiTextAlignment.Center; }
+        if (key == "LibraryAddDirectory") { style.Background = DesktopUiPalette.CapsuleBackground; style.Foreground = DesktopUiPalette.CapsuleForeground; style.Hover = DesktopUiPalette.CapsuleHover; style.FontWeight = 600; }
         _shell.Tree.SetComponent(entity, style);
         if (_shell.Tree.GetComponent<XsrUiText>(entity) is { } text && key != "LibraryEmpty") { text.MaxLines = 1; text.TrimOverflow = true; }
     }

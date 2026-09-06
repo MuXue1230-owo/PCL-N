@@ -405,6 +405,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         if (focused.Entity.IsAssigned && _controls.TryGetValue(focused.Entity, out AvaloniaUiSceneNodeControl? control)
             && !control.IsFocused)
             control.Focus(focused.IsFocusVisible ? NavigationMethod.Tab : NavigationMethod.Pointer);
+        else if (!focused.Entity.IsAssigned && !IsFocused)
+            Focus(NavigationMethod.Pointer);
     }
 
     private void DriveCapsuleGeometry(XsrUiSceneNode node)
@@ -769,6 +771,7 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
         Opacity = node.PresentationOpacity;
         UpdateRaster(node.RasterImage);
         UpdateTextInput(previous.TextInput, node.TextInput);
+        if (previous.IsFocused != node.IsFocused) ResetCaret();
         IsEnabled = node.IsEnabled;
         Focusable = node.IsFocusable;
         Clip = node.ClipRect is { } clip
@@ -1086,6 +1089,7 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
     protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
     {
         base.OnDetachedFromVisualTree(e);
+        StopCaret();
         AvaloniaUiMotion.CancelAll(this);
     }
 
@@ -1491,4 +1495,3 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
 /// last surface child, so node rows can never cover the indicators. Scene rects are used
 /// as-is — the overlay fills the surface and shares its coordinate space.
 /// </summary>
-

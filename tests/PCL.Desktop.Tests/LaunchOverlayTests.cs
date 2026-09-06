@@ -117,7 +117,16 @@ internal static partial class Program
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(850, 500));
         AssertFalse(HasKey(fixture.Shell, scene, "LaunchingAcquirePrompt"));
         AssertTrue(FindByKey(fixture.Shell, scene, "DialogMessage").Text!
-            .Contains("java-runtime-gamma", StringComparison.Ordinal));
+            .Contains("Java 17", StringComparison.Ordinal));
+        AssertEqual("取消", FindByKey(fixture.Shell, scene, "DialogCancel").Text);
+        AssertEqual("选择 Java", FindByKey(fixture.Shell, scene, "DialogAlternate").Text);
+        AssertEqual("自动下载", FindByKey(fixture.Shell, scene, "DialogAccept").Text);
+        XsrUiRect cancel = FindByKey(fixture.Shell, scene, "DialogCancel").Rect;
+        XsrUiRect select = FindByKey(fixture.Shell, scene, "DialogAlternate").Rect;
+        XsrUiRect accept = FindByKey(fixture.Shell, scene, "DialogAccept").Rect;
+        AssertTrue(select.X > cancel.X + cancel.Width + 20);
+        AssertClose(select.Y, accept.Y);
+        AssertTrue(accept.X >= select.X + select.Width);
         AssertTrue(HasKey(fixture.Shell, scene, "LaunchingHintBox"));
         AssertEqual(XsrUiSemanticRole.Dialog, FindByKey(fixture.Shell, scene, "DialogCard").Role);
         AssertRectClose(new XsrUiRect(0, 0, 850, 500), FindByKey(fixture.Shell, scene, "DialogLayer").Rect);

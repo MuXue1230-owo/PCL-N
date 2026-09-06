@@ -17,7 +17,10 @@ public sealed record MinecraftLaunchIdentity(
     string PlayerName,
     string PlayerUuid,
     string AccessToken,
-    MinecraftLaunchIdentityMode Mode);
+    MinecraftLaunchIdentityMode Mode)
+{
+    public string? AuthServer { get; init; }
+}
 
 public sealed record MinecraftLaunchRequest
 {
@@ -105,7 +108,7 @@ public sealed class MinecraftLaunchTokenContext
             ["auth_xuid"] = request.AuthXuid,
             ["clientid"] = request.ClientId,
             ["user_properties"] = request.UserProperties,
-            ["user_type"] = request.IdentityMode == MinecraftLaunchIdentityMode.Offline ? "legacy" : "msa",
+            ["user_type"] = request.IdentityMode switch { MinecraftLaunchIdentityMode.Offline => "legacy", MinecraftLaunchIdentityMode.ThirdParty => "mojang", _ => "msa" },
             ["version_type"] = request.VersionType,
             ["resolution_width"] = request.Width.ToString(System.Globalization.CultureInfo.InvariantCulture),
             ["resolution_height"] = request.Height.ToString(System.Globalization.CultureInfo.InvariantCulture),
@@ -289,7 +292,7 @@ public static class MinecraftLaunchPlanner
             args.Add("--assetIndex"); args.Add(assetsIndex);
             args.Add("--uuid"); args.Add(request.PlayerUuid);
             args.Add("--accessToken"); args.Add(request.AccessToken);
-            args.Add("--userType"); args.Add(request.IdentityMode == MinecraftLaunchIdentityMode.Offline ? "legacy" : "msa");
+            args.Add("--userType"); args.Add(request.IdentityMode switch { MinecraftLaunchIdentityMode.Offline => "legacy", MinecraftLaunchIdentityMode.ThirdParty => "mojang", _ => "msa" });
             args.Add("--versionType"); args.Add(request.VersionType);
         }
         if (request.Width > 0 && request.Height > 0)
