@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -25,7 +26,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private readonly XsrUiShell _shell;
     private readonly object _commitGate = new();
     private readonly Dictionary<XsrUiEntityId, AvaloniaUiSceneNodeControl> _controls = [];
-    private readonly ScrollIndicatorOverlay _scrollOverlay;
+    private AdornerLayer? _adornerLayer;
+    private ScrollIndicatorAdorner? _scrollAdorner;
     private readonly List<AvaloniaUiSceneNodeControl> _outgoingControls = [];
     private readonly Dictionary<XsrUiEntityId, double> _capsuleTargets = [];
     private readonly Dictionary<XsrUiEntityId, double> _progressTargets = [];
@@ -46,8 +48,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     public AvaloniaUiSceneSurface(XsrUiShell shell)
     {
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
-        _scrollOverlay = new ScrollIndicatorOverlay(this) { IsHitTestVisible = false };
-        Children.Add(_scrollOverlay);
         UseLayoutRounding = false;
         Focusable = true;
         FocusAdorner = null;
@@ -187,6 +187,31 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         _handCursor.Dispose();
         _textCursor.Dispose();
         GC.SuppressFinalize(this);
+    }
+
+    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnAttachedToVisualTree(e);
+        // The adorner layer only exists once the surface is in the visual tree; the indicator
+        // adorner must also outlive scene commits without entering Children.
+        if (AdornerLayer.GetAdornerLayer(this) is { } layer)
+        {
+            _adornerLayer = layer;
+            _scrollAdorner = new ScrollIndicatorAdorner(this);
+            _adornerLayer.Children.Add(_scrollAdorner);
+        }
+    }
+
+    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
+    {
+        base.OnDetachedFromVisualTree(e);
+        if (_adornerLayer is not null && _scrollAdorner is not null)
+        {
+            _ = _adornerLayer.Children.Remove(_scrollAdorner);
+        }
+
+        _adornerLayer = null;
+        _scrollAdorner = null;
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -381,6 +406,7 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         InvalidateMeasure();
         InvalidateArrange();
         InvalidateVisual();
+        _scrollAdorner?.InvalidateVisual();
     }
 
     private void UpdatePointerCursor(XsrUiPoint point) =>
@@ -634,11 +660,13 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private void OnStateRenderRequested(object? sender, EventArgs e) => RequestCommit();
 
     /// <summary>
-    /// A transparent full-surface overlay kept as the last child: scroll indicators must paint
-    /// above every scene node, because each node's own children paint after the node itself —
-    /// a per-node draw is always covered by its rows.
+    /// Scroll indicators paint in the adorner layer: each scene node's own children paint
+    /// after the node, so a per-node draw is always covered by its rows, and inserting a
+    /// surface child would fight ApplyScene's ownership of the Children order (dialog and
+    /// notification z-order depends on it). The adorner layer sits above every child without
+    /// touching Children.
     /// </summary>
-    private sealed class ScrollIndicatorOverlay(AvaloniaUiSceneSurface owner) : Control
+    private sealed class ScrollIndicatorAdorner(AvaloniaUiSceneSurface owner) : Control
     {
         public override void Render(DrawingContext context)
         {
