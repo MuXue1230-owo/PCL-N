@@ -1,4 +1,4 @@
-<Button xmlns="https://pcln.dev/pxml/2026" Key="LibraryRow" Command="ui.versions.directory" Height="48">
+<Button xmlns="https://pcln.dev/pxml/2026" Key="LibraryRow" Command="ui.versions.directory" Height="48" Margin="0,0,26,0">
   <StackPanel Orientation="Horizontal" Margin="10,0,16,0" Spacing="8">
     <Text Key="LibraryDirectoryRowName" Weight="1" VerticalAlignment="Center" />
     <Text Key="LibraryDirectoryRowPath" Weight="2" VerticalAlignment="Center" />

@@ -182,6 +182,14 @@ internal sealed class VersionSelectionController : IDisposable
                 + (_editingRoot is null ? 0 : 44) + (_manualAdd ? 44 : 0),
                 Math.Max(96, _shell.Renderer.Viewport.Height - 160));
             XsrUiElement card = _shell.Tree.GetComponent<XsrUiElement>(_entities["LibraryDropdownCard"])!;
+            // The card matches the directory button's width: viewport width minus the chrome
+            // margins (28), the navigation rail (48 collapsed / 120 expanded + 14 gap), the
+            // caption (76), and the add-folder button with spacings (136).
+            double railWidth = _shell.IsNavigationExpanded
+                ? XsrUiShell.ExpandedRailWidth
+                : XsrUiShell.CollapsedRailWidth;
+            double width = Math.Max(320, _shell.Renderer.Viewport.Width - railWidth - 226);
+            if (card.Width != width) { card.Width = width; _shell.Tree.MarkDirty(_dropdown, XsrUiDirtyKinds.Layout); }
             if (card.Height != height) { card.Height = height; _shell.Tree.MarkDirty(_dropdown, XsrUiDirtyKinds.Layout); }
         }
         if (_root != snapshot.RootDirectory)
