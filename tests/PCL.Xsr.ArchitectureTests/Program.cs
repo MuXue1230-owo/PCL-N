@@ -266,9 +266,10 @@ internal static class Program
     private static void ValidateProjectKind(string projectName, XDocument project, List<string> failures)
     {
         string? outputType = Property(project, "OutputType");
-        if (ExecutableProjects.Contains(projectName) && !string.Equals(outputType, "Exe", StringComparison.Ordinal))
+        string expectedOutputType = projectName == "PCL.Desktop" ? "WinExe" : "Exe";
+        if (ExecutableProjects.Contains(projectName) && !string.Equals(outputType, expectedOutputType, StringComparison.Ordinal))
         {
-            failures.Add($"{projectName} must remain an executable project.");
+            failures.Add($"{projectName} must remain an executable project with OutputType={expectedOutputType}.");
         }
 
         if (GeneratorProjects.Contains(projectName)

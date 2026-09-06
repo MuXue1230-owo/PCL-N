@@ -45,6 +45,7 @@ internal static partial class Program
         ("hit test returns top most entity", Sync(HitTestReturnsTopMostEntity)),
         ("pointer activation emits command intent", Sync(PointerActivationEmitsCommandIntent)),
         ("pointer press on non clickable is not handled", Sync(PointerPressOnNonClickableIsNotHandled)),
+        ("pointer blur tolerates a destroyed focused control", Sync(PointerBlurToleratesDestroyedFocus)),
         ("pointer release outside does not activate", Sync(PointerReleaseOutsideDoesNotActivate)),
         ("pointer move tracks hover", Sync(PointerMoveTracksHover)),
         ("pointer leaving input requests repaint", Sync(PointerLeavingInputRequestsRepaint)),

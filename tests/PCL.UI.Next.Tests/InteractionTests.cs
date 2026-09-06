@@ -74,6 +74,36 @@ internal static partial class Program
         AssertEqual(0, intents.Count);
     }
 
+    private static void PointerBlurToleratesDestroyedFocus()
+    {
+        XsrUiTree tree = new();
+        XsrUiEntityId root = tree.Create("root");
+        XsrUiEntityId search = tree.Create("search");
+        tree.SetComponent(search, new XsrUiElement { Width = 100, Height = 40 });
+        XsrUiInput input = new() { Focusable = true };
+        tree.SetComponent(search, input);
+        tree.SetComponent(search, new XsrUiTextInput());
+        tree.Attach(search, root);
+        XsrUiRenderer renderer = new(tree, new XsrStateStoreBuilder().Build());
+        renderer.SetRoot(root);
+        renderer.Render();
+
+        AssertTrue(renderer.PointerPressed(new(20, 20)));
+        AssertTrue(input.IsFocused);
+        AssertFalse(renderer.PointerPressed(new(200, 100)));
+        AssertFalse(input.IsFocused);
+        AssertFalse(renderer.Focused.IsAssigned);
+
+        AssertTrue(renderer.PointerPressed(new(20, 20)));
+        tree.Destroy(search);
+        // Cover input before the next scene update, then input after the rebuilt scene.
+        AssertFalse(renderer.PointerPressed(new(200, 100)));
+        AssertFalse(renderer.Focused.IsAssigned);
+        renderer.Render();
+        AssertFalse(renderer.PointerPressed(new(20, 20)));
+        AssertFalse(renderer.Focused.IsAssigned);
+    }
+
     private static void PointerReleaseOutsideDoesNotActivate()
     {
         XsrUiTree tree = new();

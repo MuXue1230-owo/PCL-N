@@ -809,6 +809,12 @@ public sealed partial class XsrUiRenderer
     /// </summary>
     public bool PointerPressed(XsrUiPoint point)
     {
+        // Page replacement can destroy the focused entity between pointer events.
+        // Clear the stale generation before either focusing or blurring a control.
+        if (_focused.IsAssigned && !_tree.IsAlive(_focused))
+        {
+            _focused = default;
+        }
         bool pagerGesture = BeginPagerGesture(point);
         XsrUiEntityId entity = InputAt(point);
         XsrUiInput? input = entity.IsAssigned ? _tree.GetComponent<XsrUiInput>(entity) : null;
