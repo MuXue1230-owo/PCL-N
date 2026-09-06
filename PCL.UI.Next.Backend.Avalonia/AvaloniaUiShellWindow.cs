@@ -33,7 +33,6 @@ public sealed class AvaloniaUiShellWindow : Window
 
     private readonly XsrUiShell _shell;
     private readonly AvaloniaUiSceneSurface _surface;
-    private ScrollIndicatorOverlay? _scrollOverlay;
     private readonly AvaloniaNativeWindowActions _windowActions;
     private readonly Border _shadowSurface;
     private readonly Border _chromeSurface;
@@ -115,17 +114,9 @@ public sealed class AvaloniaUiShellWindow : Window
 
         // This overlay has no application layout. The scene surface below remains the sole
         // projection of PXML/UI.Next entities; these controls are native window affordances.
-        // The scroll-indicator overlay is a sibling ABOVE the surface (never a surface child —
-        // ApplyScene owns the surface's Children order), repainting on every scene commit.
         Grid chrome = new();
         chrome.Children.Add(_surface);
-        _scrollOverlay = new ScrollIndicatorOverlay(_surface, () => _surface.DebugScene)
-        {
-            IsHitTestVisible = false,
-        };
-        chrome.Children.Add(_scrollOverlay);
         chrome.Children.Add(_windowActions);
-        _surface.SceneCommitted += OnSceneCommittedRepaintOverlay;
         _chromeSurface.Child = chrome;
 
         // Everything the circular mask may clip lives in this subtree; the product icon is a
@@ -558,9 +549,6 @@ public sealed class AvaloniaUiShellWindow : Window
             RunStartupReveal();
         }
     }
-    private void OnSceneCommittedRepaintOverlay(object? sender, AvaloniaUiSceneCommittedEventArgs e) =>
-        _scrollOverlay?.InvalidateVisual();
-
 
     private void OnTitleBarDragRequested(object? sender, PointerPressedEventArgs e)
     {
@@ -574,46 +562,3 @@ public sealed class AvaloniaUiShellWindow : Window
         BeginMoveDrag(e);
     }
 }
-
-/// <summary>
-/// Paints the scroll indicators of every scene node above the whole window content:
-/// a node's own children paint after the node, so per-node draws are always covered.
-/// </summary>
-internal sealed class ScrollIndicatorOverlay(
-    AvaloniaUiSceneSurface surface, Func<XsrUiScene?> sceneProvider) : Control
-{
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        XsrUiScene? scene = sceneProvider();
-        if (scene is null)
-        {
-            return;
-        }
-
-        // Scene rects live in the surface's coordinate space; this overlay is a sibling
-        // control, so every rect must be mapped through the surface-to-overlay transform
-        // before drawing — raw scene coordinates misplace the indicator.
-        Matrix? surfaceToOverlay = surface.TransformToVisual(this);
-        if (surfaceToOverlay is not { } transform)
-        {
-            return;
-        }
-
-        for (int index = 0; index < scene.Count; index++)
-        {
-            XsrUiSceneNode node = scene[index];
-            if (node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
-            {
-                // Manual matrix application: no dependency on point/size transform APIs.
-                double x = (transform.M11 * node.Rect.X) + (transform.M21 * node.Rect.Y) + transform.M31;
-                double y = (transform.M12 * node.Rect.X) + (transform.M22 * node.Rect.Y) + transform.M32;
-                AvaloniaUiSceneNodeControl.DrawScrollIndicator(
-                    context,
-                    new Rect(x, y, node.Rect.Width, node.Rect.Height),
-                    scroll);
-            }
-        }
-    }
-}
-
