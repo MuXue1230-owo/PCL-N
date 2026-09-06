@@ -478,20 +478,23 @@ internal static partial class Program
     private static void VerifyCloseDoesNotRestoreShadows(
         AvaloniaUiShellWindow window, XsrUiShell shell, AvaloniaUiSceneSurface surface)
     {
-        Border shadow = window.GetVisualDescendants().OfType<Border>()
-            .Single(border => border.BoxShadow.Count > 0);
+        // The shell draws no self-shadow anymore (an opaque margin would expose the true
+        // window bounds): nothing may reintroduce one across close, scene updates, or state
+        // changes.
         shell.Renderer.ReducedMotion = false;
         AvaloniaNativeWindowActions.WindowActionButton close = window.GetVisualDescendants()
             .OfType<AvaloniaNativeWindowActions.WindowActionButton>().Last();
         Point center = close.TranslatePoint(new Point(14, 14), window)!.Value;
         window.MouseDown(center, MouseButton.Left, RawInputModifiers.None);
         window.MouseUp(center, MouseButton.Left, RawInputModifiers.None);
-        AssertTrue(!shadow.IsVisible && shadow.BoxShadow.Count == 0);
+        AssertTrue(window.GetVisualDescendants().OfType<Border>()
+            .All(border => border.BoxShadow.Count == 0));
         shell.SetNavigationExpanded(!shell.IsNavigationExpanded);
         surface.CommitScene();
         window.WindowState = WindowState.Maximized;
         window.WindowState = WindowState.Normal;
-        AssertTrue(!shadow.IsVisible && shadow.BoxShadow.Count == 0);
+        AssertTrue(window.GetVisualDescendants().OfType<Border>()
+            .All(border => border.BoxShadow.Count == 0));
         AssertTrue(!window.TransparencyLevelHint.Contains(WindowTransparencyLevel.AcrylicBlur));
         Console.WriteLine("PASS: close collapse suppresses application shadow and backdrop across scene updates");
     }

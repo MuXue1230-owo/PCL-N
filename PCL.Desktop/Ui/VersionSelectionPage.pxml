@@ -1,0 +1,24 @@
+<Page xmlns="https://pcln.dev/pxml/2026" Key="VersionListPage" Label="选择版本">
+  <StackPanel Key="LibraryContent" Orientation="Vertical" Weight="1" Spacing="16">
+    <StackPanel Key="LibraryDirectoryBar" Orientation="Horizontal" Height="40" Spacing="8">
+      <Text Key="LibraryDirectoryCaption" Content="当前目录：" Width="76" VerticalAlignment="Center" />
+      <Button Key="LibraryChooseDirectory" Label="{state versions.directory.path}" Command="ui.versions.directories" Weight="1" Height="40">
+        <StackPanel Orientation="Horizontal" Spacing="12" Margin="14,0,12,0">
+          <Text Key="LibraryDirectoryName" Content="{state versions.directory.name}" Weight="1" VerticalAlignment="Center" />
+          <Text Key="LibraryDirectoryPath" Content="{state versions.directory.path}" Weight="2" VerticalAlignment="Center" IsVisible="{state versions.directory.named}" />
+          <Image Key="LibraryDirectoryChevron" Source="lucide/chevron-down" Width="16" Height="16" VerticalAlignment="Center" />
+        </StackPanel>
+      </Button>
+      <Button Key="LibraryAddDirectory" Content="添加文件夹" Label="添加文件夹" Command="ui.versions.browse" Icon="lucide/plus" Width="120" Height="40" />
+    </StackPanel>
+    <StackPanel Key="LibraryVersions" Orientation="Vertical" Weight="1" IsVisible="{state versions.list.visible}">
+      <StackPanel Orientation="Horizontal" Height="36" Spacing="12" Margin="2,0,2,10">
+        <Text Key="LibraryCount" Content="{state versions.list.count}" Weight="1" VerticalAlignment="Center" />
+        <TextInput Key="LibrarySearch" Label="搜索版本" Placeholder="搜索版本" Width="208" Height="36" />
+        <Button Key="LibraryRefresh" Label="刷新版本" Command="ui.versions.refresh" Icon="pcl/refresh" Width="36" Height="36" />
+      </StackPanel>
+      <StackPanel Key="LibraryVersionRows" Orientation="Vertical" Weight="1" Spacing="8" Scroll="true" />
+      <Text Key="LibraryEmpty" Content="{state versions.list.status}" Height="56" Margin="18,16,18,0" IsVisible="{state versions.list.empty}" />
+    </StackPanel>
+  </StackPanel>
+</Page>

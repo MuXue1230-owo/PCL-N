@@ -1,0 +1,12 @@
+<Button xmlns="https://pcln.dev/pxml/2026" Key="LibraryRow" Command="ui.versions.select" Height="72">
+  <StackPanel Orientation="Horizontal" Spacing="12" Margin="16,12,16,12">
+    <Image Key="LibraryRowIcon" Source="lucide/blocks" Width="28" Height="28" VerticalAlignment="Center" />
+    <StackPanel Orientation="Vertical" Weight="1" VerticalAlignment="Center">
+      <Text Key="LibraryRowName" Height="24" />
+      <Text Key="LibraryRowDetail" Height="20" />
+    </StackPanel>
+    <Image Key="LibraryRowCheck" Source="lucide/check" Width="18" Height="18" VerticalAlignment="Center" />
+    <Text Key="LibraryRowSelected" Content="当前版本" Width="64" Height="24" VerticalAlignment="Center" />
+    <Button Key="LibraryRowForget" Icon="lucide/x" Label="从列表移除此目录，保留游戏文件" Command="ui.versions.forget" Width="32" Height="32" VerticalAlignment="Center" IsVisible="false" />
+  </StackPanel>
+</Button>

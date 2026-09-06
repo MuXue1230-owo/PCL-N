@@ -25,6 +25,7 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private readonly XsrUiShell _shell;
     private readonly object _commitGate = new();
     private readonly Dictionary<XsrUiEntityId, AvaloniaUiSceneNodeControl> _controls = [];
+    private readonly ScrollIndicatorOverlay _scrollOverlay;
     private readonly List<AvaloniaUiSceneNodeControl> _outgoingControls = [];
     private readonly Dictionary<XsrUiEntityId, double> _capsuleTargets = [];
     private readonly Dictionary<XsrUiEntityId, double> _progressTargets = [];
@@ -45,6 +46,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     public AvaloniaUiSceneSurface(XsrUiShell shell)
     {
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
+        _scrollOverlay = new ScrollIndicatorOverlay(this) { IsHitTestVisible = false };
+        Children.Add(_scrollOverlay);
         UseLayoutRounding = false;
         Focusable = true;
         FocusAdorner = null;
@@ -629,6 +632,35 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private void OnTreeRenderInvalidated(object? sender, EventArgs e) => RequestCommit();
 
     private void OnStateRenderRequested(object? sender, EventArgs e) => RequestCommit();
+
+    /// <summary>
+    /// A transparent full-surface overlay kept as the last child: scroll indicators must paint
+    /// above every scene node, because each node's own children paint after the node itself —
+    /// a per-node draw is always covered by its rows.
+    /// </summary>
+    private sealed class ScrollIndicatorOverlay(AvaloniaUiSceneSurface owner) : Control
+    {
+        public override void Render(DrawingContext context)
+        {
+            base.Render(context);
+            if (owner._scene is null)
+            {
+                return;
+            }
+
+            for (int index = 0; index < owner._scene.Count; index++)
+            {
+                XsrUiSceneNode node = owner._scene[index];
+                if (node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
+                {
+                    AvaloniaUiSceneNodeControl.DrawScrollIndicator(
+                        context,
+                        new Rect(node.Rect.X, node.Rect.Y, node.Rect.Width, node.Rect.Height),
+                        scroll);
+                }
+            }
+        }
+    }
 }
 
 /// <summary>Immutable scene data delivered to backend-native chrome after a commit.</summary>
@@ -1183,7 +1215,8 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
             && Bounds.Width <= CollapsedRailCenteringWidth;
         bool textVisible = _node.Text is { Length: > 0 } && !collapsedRailItem;
         bool railRow = textVisible && style.NavigationLayout;
-        if (DrawRaster(context, rect) || (_node.ImageSource is { Length: > 0 } avatarSource && AvaloniaUiAvatars.TryDraw(context, avatarSource, rect)))
+        if (DrawRaster(context, rect) || (_node.ImageSource is { Length: > 0 } avatarSource &&
+            (AvaloniaUiAvatars.TryDraw(context, avatarSource, rect) || AvaloniaUiVersionImages.TryDraw(context, avatarSource, rect))))
         {
             if (textVisible) DrawText(context, style, 0);
         }
@@ -1225,7 +1258,6 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
         }
 
         DrawSelectionPill(context, style);
-        DrawScrollIndicator(context, rect);
 
         if (_node.IsFocusVisible)
         {
@@ -1306,12 +1338,8 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
         context.DrawText(formatted, new Point(alignedX, y));
     }
 
-    private void DrawScrollIndicator(DrawingContext context, Rect rect)
+    internal static void DrawScrollIndicator(DrawingContext context, Rect rect, XsrUiScrollSnapshot scroll)
     {
-        if (_node.Scroll is not { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
-        {
-            return;
-        }
 
         const double width = 3;
         const double inset = 6;

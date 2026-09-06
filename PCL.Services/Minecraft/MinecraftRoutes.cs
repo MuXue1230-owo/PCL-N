@@ -6,7 +6,10 @@ namespace PCL.Services.Minecraft;
 
 public sealed record MinecraftVersionsQuery(string MinecraftRootDirectory);
 public sealed record MinecraftInstancesQuery(string MinecraftRootDirectory);
-public sealed record MinecraftStartCommand(string InstanceId, int AccountIndex);
+public sealed record MinecraftStartCommand(string InstanceId, int AccountIndex)
+{
+    public string? MinecraftRootDirectory { get; init; }
+}
 public sealed record MinecraftLaunchCommand(MinecraftLaunchRequest Request);
 public sealed record MinecraftCancelProcessCommand(Guid SessionId);
 public sealed record MinecraftCancelLaunchCommand;
@@ -56,10 +59,9 @@ public static class MinecraftCommands
         {
             ArgumentNullException.ThrowIfNull(command);
             ArgumentNullException.ThrowIfNull(coordinator);
-            return await coordinator.StartAsync(
-                command.InstanceId,
-                command.AccountIndex,
-                cancellationToken).ConfigureAwait(false);
+            return command.MinecraftRootDirectory is { } root
+                ? await coordinator.StartAsync(command.InstanceId, command.AccountIndex, root, cancellationToken).ConfigureAwait(false)
+                : await coordinator.StartAsync(command.InstanceId, command.AccountIndex, cancellationToken).ConfigureAwait(false);
         };
 
     public static XsrCommandHandler<MinecraftLaunchCommand> CreateLaunchHandler(Process.MinecraftProcessService processService) =>

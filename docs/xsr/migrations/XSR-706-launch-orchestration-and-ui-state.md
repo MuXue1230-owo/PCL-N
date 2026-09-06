@@ -13,6 +13,9 @@ JSON, derives an offline identity, or dispatches `minecraft.launch` directly.
 
 ## Locked launch boundary
 
+XSR-716 adds an explicit Minecraft root to product instance identity while retaining the original
+command constructor. Desktop still supplies identifiers only; Services resolves all launch data.
+
 The public product path is:
 
 ```text

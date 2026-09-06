@@ -79,4 +79,13 @@ public sealed class AvaloniaUiPlatformActions
         using IStorageFile? file = files.Count > 0 ? files[0] : null;
         return file?.TryGetLocalPath();
     }
+
+    public async Task<string?> PickDirectoryAsync()
+    {
+        if (_owner?.StorageProvider is not { } storage) throw new InvalidOperationException("The native folder picker is not ready.");
+        IReadOnlyList<IStorageFolder> folders = await storage.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        { Title = "选择游戏目录", AllowMultiple = false });
+        using IStorageFolder? folder = folders.Count > 0 ? folders[0] : null;
+        return folder?.TryGetLocalPath();
+    }
 }

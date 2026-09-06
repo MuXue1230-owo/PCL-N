@@ -156,9 +156,14 @@ public sealed class MinecraftLaunchCoordinator
         }
     }
 
-    public async ValueTask<XsrResult<MinecraftLaunchPreparation>> PrepareAsync(
+    public ValueTask<XsrResult<MinecraftLaunchPreparation>> PrepareAsync(
         string instanceId,
         int accountIndex,
+        CancellationToken cancellationToken = default)
+        => PrepareAsync(instanceId, accountIndex, _minecraftRootDirectory, cancellationToken);
+
+    public async ValueTask<XsrResult<MinecraftLaunchPreparation>> PrepareAsync(
+        string instanceId, int accountIndex, string minecraftRootDirectory,
         CancellationToken cancellationToken = default)
     {
         using LogOperation? operation = _log?.BeginOperation("Launch", "PrepareLaunch", $"instance={instanceId} account_index={accountIndex}");
@@ -171,9 +176,12 @@ public sealed class MinecraftLaunchCoordinator
 
         try
         {
+            string root = MinecraftLibraryService.NormalizeDirectory(minecraftRootDirectory);
+            string javaRoot = MinecraftLibraryService.PathComparer.Equals(root, _minecraftRootDirectory)
+                ? _javaRuntimeRootDirectory : Path.Combine(root, "runtime");
             operation?.Stage("resolve_instance");
             IReadOnlyList<MinecraftInstanceDescriptor> installed = await _instances
-                .DiscoverAsync(_minecraftRootDirectory, cancellationToken)
+                .DiscoverAsync(root, cancellationToken)
                 .ConfigureAwait(false);
             MinecraftInstanceDescriptor? instance = installed.FirstOrDefault(candidate =>
                 string.Equals(candidate.Id, instanceId, StringComparison.OrdinalIgnoreCase));
@@ -233,7 +241,7 @@ public sealed class MinecraftLaunchCoordinator
                 async token =>
                 {
                     manifests = await MinecraftVersionJsonReader
-                        .ResolveAsync(instance, _minecraftRootDirectory, token)
+                        .ResolveAsync(instance, root, token)
                         .ConfigureAwait(false);
                     loader = MinecraftModLoaderDetector.Detect(manifests.Current);
                 },
@@ -260,11 +268,18 @@ public sealed class MinecraftLaunchCoordinator
                     java = await _javaSelection
                         .SelectAsync(javaRequest, preference, token)
                         .ConfigureAwait(false);
+                    if (!java.Success && java.FailureReason == JavaSelectionFailureReason.NoCompatibleRuntime
+                        && !MinecraftLibraryService.PathComparer.Equals(root, _minecraftRootDirectory))
+                    {
+                        JavaSelectionResult local = await new JavaSelectionService(new LocalJavaRuntimeLocator(javaRoot, _log))
+                            .SelectAsync(javaRequest, preference, token).ConfigureAwait(false);
+                        if (local.Success) java = local;
+                    }
                     resolvedJava = await ResolveJavaAsync(
                         java,
                         preference,
                         loader.Kind is MinecraftModLoaderKind.Forge or MinecraftModLoaderKind.NeoForge,
-                        operation, token).ConfigureAwait(false);
+                        operation, javaRoot, token).ConfigureAwait(false);
                 },
                 cancellationToken).ConfigureAwait(false);
             if (!resolvedJava.IsSuccess)
@@ -279,7 +294,7 @@ public sealed class MinecraftLaunchCoordinator
                 manifests,
                 loader,
                 identityResult.Value,
-                resolvedJava.Value);
+                resolvedJava.Value, root);
             operation?.Complete($"instance={instance.Id} memory_mb={request.MemoryMegabytes}");
             return XsrResult.Success(new MinecraftLaunchPreparation(
                 instance,
@@ -310,9 +325,14 @@ public sealed class MinecraftLaunchCoordinator
         }
     }
 
-    public async ValueTask<XsrResult> StartAsync(
+    public ValueTask<XsrResult> StartAsync(
         string instanceId,
         int accountIndex,
+        CancellationToken cancellationToken = default)
+        => StartAsync(instanceId, accountIndex, _minecraftRootDirectory, cancellationToken);
+
+    public async ValueTask<XsrResult> StartAsync(
+        string instanceId, int accountIndex, string minecraftRootDirectory,
         CancellationToken cancellationToken = default)
     {
         using LogOperation? operation = _log?.BeginOperation("Launch", "StartMinecraft", $"instance={instanceId} account_index={accountIndex}");
@@ -331,7 +351,7 @@ public sealed class MinecraftLaunchCoordinator
 
         try
         {
-            return await StartLockedAsync(instanceId, accountIndex, launchCancellation, operation).ConfigureAwait(false);
+            return await StartLockedAsync(instanceId, accountIndex, minecraftRootDirectory, launchCancellation, operation).ConfigureAwait(false);
         }
         finally
         {
@@ -351,6 +371,7 @@ public sealed class MinecraftLaunchCoordinator
     private async ValueTask<XsrResult> StartLockedAsync(
         string instanceId,
         int accountIndex,
+        string minecraftRootDirectory,
         CancellationTokenSource launchCancellation,
         LogOperation? operation)
     {
@@ -364,7 +385,7 @@ public sealed class MinecraftLaunchCoordinator
             _progress?.Start();
             operation?.Stage("prepare");
             XsrResult<MinecraftLaunchPreparation> preparation = await PrepareAsync(
-                instanceId, accountIndex, launchToken).ConfigureAwait(false);
+                instanceId, accountIndex, minecraftRootDirectory, launchToken).ConfigureAwait(false);
             if (!preparation.IsSuccess)
             {
                 operation?.Reject(preparation.Error!.Code.Value);
@@ -638,6 +659,7 @@ public sealed class MinecraftLaunchCoordinator
         JavaPreference preference,
         bool hasForge,
         LogOperation? operation,
+        string javaRuntimeRootDirectory,
         CancellationToken cancellationToken)
     {
         _log?.Info("Java", $"Java selection completed success={selection.Success} failure={selection.FailureReason} minimum={selection.Requirement.Range.Minimum} maximum={selection.Requirement.Range.Maximum}");
@@ -685,7 +707,7 @@ public sealed class MinecraftLaunchCoordinator
         operation?.Stage("install_java", $"component={acquisition.DownloadComponent}");
         string acquiredExecutable = await _javaInstaller.InstallAsync(
             acquisition.DownloadComponent,
-            _javaRuntimeRootDirectory,
+            javaRuntimeRootDirectory,
             progress: null,
             cancellationToken).ConfigureAwait(false);
         if (!File.Exists(acquiredExecutable))
@@ -739,7 +761,8 @@ public sealed class MinecraftLaunchCoordinator
         MinecraftResolvedVersionManifests manifests,
         MinecraftModLoaderDescriptor loader,
         MinecraftLaunchIdentity identity,
-        ResolvedJava java)
+        ResolvedJava java,
+        string minecraftRootDirectory)
     {
         MinecraftInstanceMetadata metadata = instance.Metadata;
         int width = GetSetting("LaunchArgumentWindowWidth", 854);
@@ -762,7 +785,7 @@ public sealed class MinecraftLaunchCoordinator
             InheritedVersionJsons = manifests.Inherited,
             VersionId = instance.VersionId,
             InstanceDirectory = instance.DirectoryPath,
-            MinecraftRootDirectory = _minecraftRootDirectory,
+            MinecraftRootDirectory = minecraftRootDirectory,
             PlayerName = identity.PlayerName,
             PlayerUuid = identity.PlayerUuid,
             AccessToken = identity.AccessToken,

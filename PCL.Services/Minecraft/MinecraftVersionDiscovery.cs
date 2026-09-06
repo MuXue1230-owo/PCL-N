@@ -191,7 +191,8 @@ public sealed class MinecraftVersionDiscovery(PCL.Services.Logging.LogService? l
                 ReadString(json, "inheritsFrom"),
                 ReadString(json, "mainClass"),
                 release,
-                MinecraftVersionClassifier.Classify(catalog)));
+                MinecraftVersionClassifier.Classify(catalog))
+            { Kind = MinecraftVersionKindReader.Read(root, directory, jsonPath, json) });
         }
 
         return result;

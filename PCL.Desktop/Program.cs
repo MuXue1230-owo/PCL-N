@@ -233,14 +233,16 @@ internal static class Program
         // The launch page is the first product vertical slice: it routes navigation intents to
         // pages inside the shell content host and dispatches the real launch command.
         setStage("attach_product_controllers");
+        AvaloniaUiPlatformActions platformActions = new();
+        using MinecraftLibraryRuntime library = MinecraftLibraryRuntimeComposer.Compose(host, minecraftRootDirectory, minecraft.Instances, operationLog.Dispatch);
         using LaunchPageController launchPage = new(
             shell,
             uiIntents,
             minecraft,
             runtime.Commands,
             runtime.Host.StateStore,
-            minecraftRootDirectory, feedback, accountCommands: accounts.Commands);
-        AvaloniaUiPlatformActions platformActions = new();
+            library, feedback, accountCommands: accounts.Commands,
+            directoryEffects: new NativeVersionDirectoryEffects(platformActions));
         using AccountFormController accountForm = new(shell, uiIntents, accounts.Commands,
             runtime.Host.StateStore, launchPage.AccountBody, feedback,
             new NativeAccountUiEffects(platformActions), runtime.Host.Logging);

@@ -45,7 +45,7 @@
         <StackPanel Orientation="Vertical" Spacing="10" Margin="16,14,16,14" Key="VersionContent">
           <StackPanel Orientation="Horizontal" StretchLastChild="true" Key="VersionHeaderRow">
             <Text Key="VersionHeader" Content="版本" VerticalAlignment="Center" />
-            <Button Key="InstanceListButton" Label="版本列表" Content="版本列表" Command="ui.launch.instances"
+            <Button Key="InstanceListButton" Label="选择版本" Content="选择版本" Command="ui.launch.instances"
                     Icon="lucide/menu" Width="98" Height="36" HorizontalAlignment="End" />
           </StackPanel>
           <StackPanel Orientation="Vertical" Key="InstanceRow">

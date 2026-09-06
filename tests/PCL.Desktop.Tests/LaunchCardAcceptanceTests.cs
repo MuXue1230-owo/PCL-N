@@ -193,7 +193,7 @@ internal static partial class Program
         XsrUiSize size = new(850, 500);
         foreach ((string entry, string key, string title) in new[]
         {
-            ("InstanceListButton", "VersionListPage", "版本列表"),
+            ("InstanceListButton", "VersionListPage", "选择版本"),
             ("InstanceSettings", "VersionSettingsPage", "版本设置"),
             ("InstanceModify", "VersionModifyPage", "版本修改"),
         })

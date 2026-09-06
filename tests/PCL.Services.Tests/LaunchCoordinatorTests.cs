@@ -185,6 +185,22 @@ internal static partial class Program
             AssertEqual("player-uuid", request.PlayerUuid);
             AssertEqual(MinecraftLaunchIdentityMode.Offline, request.IdentityMode);
             AssertEqual(0, installer.Calls);
+            string anotherRoot = Path.Combine(root, "another-root");
+            string anotherInstance = CreateVersionDirectory(anotherRoot, "fabric-loader", new JsonObject
+            {
+                ["id"] = "different-game",
+                ["type"] = "release",
+                ["mainClass"] = "example.OtherMain",
+                ["javaVersion"] = new JsonObject { ["majorVersion"] = 17 },
+            });
+            XsrResult<MinecraftLaunchPreparation> another = await coordinator.PrepareAsync("fabric-loader", 0, anotherRoot);
+            AssertTrue(another.IsSuccess);
+            AssertEqual(anotherRoot, another.Value.Request.MinecraftRootDirectory);
+            AssertEqual(anotherInstance, another.Value.Request.InstanceDirectory);
+            AssertEqual("different-game", another.Value.Request.VersionId);
+            AssertEqual(0, another.Value.Request.InheritedVersionJsons.Count);
+            AssertEqual(root, request.MinecraftRootDirectory);
+            AssertFalse((await coordinator.PrepareAsync("fabric-loader", 0, "relative-root")).IsSuccess);
         }
         finally
         {

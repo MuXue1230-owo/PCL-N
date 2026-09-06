@@ -28,6 +28,9 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("version selection uses the captured directory for launch and restores each selection", VersionSelectionUsesDirectoryQualifiedLaunch),
+        ("version list remains compact searchable and scrollable with distinct icons", VersionListKeepsCompactGeometryAndIcons),
+        ("directory pickers cannot publish after leaving the version page", VersionDirectoryPickerDiscardsLateResult),
         ("imported profiles remain visible when the picker reopens", ImportedProfilesRemainVisibleWhenPickerReopens),
         ("account forms share one header and create offline profiles", AccountFormsUseOneHeaderAndCreateOfflineProfiles),
         ("Microsoft onboarding reuses services and rejects late cancelled completion", MicrosoftOnboardingUsesServiceAndDiscardsLateCancellation),
@@ -204,7 +207,7 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.launch.instances");
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(HasKey(fixture.Shell, scene, "VersionListPage"));
-        AssertEqual("版本列表", FindByKey(fixture.Shell, scene, "TitleSubpage").Text);
+        AssertEqual("选择版本", FindByKey(fixture.Shell, scene, "TitleSubpage").Text);
         AssertFalse(HasKey(fixture.Shell, scene, "LaunchButton"));
     }
 
@@ -217,7 +220,7 @@ internal static partial class Program
 
         AssertEqual("下载游戏", button.Text);
         AssertEqual("下载游戏", button.Label);
-        AssertEqual("版本列表", FindByKey(fixture.Shell, scene, "InstanceListButton").Label);
+        AssertEqual("选择版本", FindByKey(fixture.Shell, scene, "InstanceListButton").Label);
         AssertFalse(scene.Nodes.Any(node => node.Label is "LaunchButton" or "InstanceListButton" or "VersionName" or "CardAccount"));
     }
 
@@ -417,7 +420,7 @@ internal static partial class Program
         private readonly bool _ownsMinecraftRuntime;
 
         public LaunchPageFixture(
-            ILaunchPageInstanceSource source,
+            IMinecraftInstanceSource source,
             MinecraftRuntime? minecraft = null,
             bool addProfile = false,
             bool ownsMinecraftRuntime = true,
@@ -427,7 +430,8 @@ internal static partial class Program
             LegacyProfileImport? imports = null,
             AccountOnboardingOptions? accountOptions = null,
             bool enableSkins = false,
-            TimeProvider? timeProvider = null)
+            TimeProvider? timeProvider = null,
+            IVersionDirectoryEffects? directoryEffects = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -462,15 +466,18 @@ internal static partial class Program
                 }).IsSuccess);
             }
 
+            string minecraftRoot = Path.Combine(_temporaryDirectory, "minecraft");
+            Directory.CreateDirectory(minecraftRoot);
+            Library = MinecraftLibraryRuntimeComposer.Compose(host, minecraftRoot, source);
             Controller = new LaunchPageController(
                 Shell,
                 Intents,
                 Minecraft,
                 Foundation.Commands,
                 Store,
-                Path.Combine(_temporaryDirectory, "minecraft"),
-                Feedback, source, accountCommands: enableSkins ? Onboarding.Commands : null,
-                timeProvider: timeProvider);
+                Library,
+                Feedback, accountCommands: enableSkins ? Onboarding.Commands : null,
+                timeProvider: timeProvider, directoryEffects: directoryEffects);
             AccountForm = new AccountFormController(Shell, Intents, Onboarding.Commands, Store,
                 Controller.AccountBody, Feedback, accountEffects, host.Logging);
             _launchObserverSubscription = storeObservation.Subscribe(Controller.StateObserver);
@@ -483,6 +490,7 @@ internal static partial class Program
         public DesktopUiIntentSink Intents { get; }
         public XsrStateStore Store { get; }
         public MinecraftRuntime Minecraft { get; }
+        public MinecraftLibraryRuntime Library { get; }
         public AccountService Service { get; }
         public DesktopFeedbackService Feedback { get; }
         public DesktopFeedbackPresenter FeedbackPresenter { get; }
@@ -496,6 +504,7 @@ internal static partial class Program
             Onboarding.Dispose();
             _launchObserverSubscription?.Dispose();
             Controller.Dispose();
+            Library.Dispose();
             FeedbackPresenter.Dispose();
             Feedback.Dispose();
             if (_ownsMinecraftRuntime)
@@ -508,14 +517,14 @@ internal static partial class Program
     }
 
     private sealed class ImmediateInstanceSource(IReadOnlyList<MinecraftInstanceDescriptor> instances)
-        : ILaunchPageInstanceSource
+        : IMinecraftInstanceSource
     {
-        public ValueTask<XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>>> ReadAsync(
-            CancellationToken cancellationToken) =>
-            ValueTask.FromResult(XsrResult.Success(instances));
+        public ValueTask<IReadOnlyList<MinecraftInstanceDescriptor>> DiscoverAsync(
+            string minecraftRootDirectory, CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(instances);
     }
 
-    private sealed class ControllableInstanceSource : ILaunchPageInstanceSource
+    private sealed class ControllableInstanceSource : IMinecraftInstanceSource
     {
         private readonly object _gate = new();
         private readonly List<TaskCompletionSource<XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>>>> _requests = [];
@@ -525,8 +534,8 @@ internal static partial class Program
         public int Count { get { lock (_gate) return _requests.Count; } }
         public int ReturnedCount => Volatile.Read(ref _returnedCount);
 
-        public async ValueTask<XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>>> ReadAsync(
-            CancellationToken cancellationToken)
+        public async ValueTask<IReadOnlyList<MinecraftInstanceDescriptor>> DiscoverAsync(
+            string minecraftRootDirectory, CancellationToken cancellationToken = default)
         {
             TaskCompletionSource<XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>>> request =
                 new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -538,7 +547,7 @@ internal static partial class Program
 
             XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>> result = await request.Task.ConfigureAwait(false);
             _ = Interlocked.Increment(ref _returnedCount);
-            return result;
+            return result.Value;
         }
 
         public CancellationToken TokenAt(int index)

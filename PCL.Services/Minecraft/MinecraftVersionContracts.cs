@@ -202,4 +202,13 @@ public sealed record MinecraftVersionDescriptor(
     string? InheritsFrom,
     string? MainClass,
     DateTimeOffset? ReleaseTime,
-    MinecraftVersionClassification Classification);
+    MinecraftVersionClassification Classification)
+{
+    public MinecraftVersionKind Kind { get; init; } = Classification.Category switch
+    {
+        MinecraftVersionCategory.Snapshot => MinecraftVersionKind.Snapshot,
+        MinecraftVersionCategory.BeforeRelease => MinecraftVersionKind.Old,
+        MinecraftVersionCategory.AprilFools => MinecraftVersionKind.AprilFools,
+        _ => MinecraftVersionKind.Release,
+    };
+}

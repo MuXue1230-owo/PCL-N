@@ -108,7 +108,8 @@ internal sealed class LaunchPageController : IDisposable
     private long _skinRevision = -1;
     private readonly XsrStateStore _store;
     private readonly DesktopFeedbackService _feedback;
-    private readonly ILaunchPageInstanceSource _instanceSource;
+    private readonly XsrCommandRouter _libraryCommands;
+    internal VersionSelectionController Versions { get; }
     private readonly XsrUiEntityId _launchPage;
     private readonly XsrUiEntityId _placeholderPage;
     private readonly XsrUiEntityId _versionListPage;
@@ -136,9 +137,7 @@ internal sealed class LaunchPageController : IDisposable
     private ITimer? _hintTimer;
     private readonly object _refreshGate = new();
     private readonly CancellationTokenSource _lifetimeCancellation = new();
-    private CancellationTokenSource? _refreshCancellation;
     private Task _refreshTask = Task.CompletedTask;
-    private long _refreshGeneration;
     private bool _attached;
     private bool _disposed;
 
@@ -148,11 +147,11 @@ internal sealed class LaunchPageController : IDisposable
         MinecraftRuntime minecraft,
         XsrCommandRouter foundationCommands,
         XsrStateStore store,
-        string minecraftRootDirectory,
+        MinecraftLibraryRuntime library,
         DesktopFeedbackService feedback,
-        ILaunchPageInstanceSource? instanceSource = null,
         XsrCommandRouter? accountCommands = null,
-        TimeProvider? timeProvider = null)
+        TimeProvider? timeProvider = null,
+        IVersionDirectoryEffects? directoryEffects = null)
     {
         ArgumentNullException.ThrowIfNull(shell);
         ArgumentNullException.ThrowIfNull(intents);
@@ -160,10 +159,6 @@ internal sealed class LaunchPageController : IDisposable
         ArgumentNullException.ThrowIfNull(foundationCommands);
         ArgumentNullException.ThrowIfNull(store);
         ArgumentNullException.ThrowIfNull(feedback);
-        if (instanceSource is null)
-        {
-            ArgumentException.ThrowIfNullOrWhiteSpace(minecraftRootDirectory);
-        }
         _shell = shell;
         _intents = intents;
         _minecraft = minecraft;
@@ -173,13 +168,11 @@ internal sealed class LaunchPageController : IDisposable
         _store = store;
         _feedback = feedback;
         StateObserver = new LaunchingStateObserver(this);
-        _instanceSource = instanceSource
-            ?? new MinecraftRuntimeLaunchPageInstanceSource(
-                minecraft.Queries,
-                minecraftRootDirectory);
+        _libraryCommands = library.Commands;
         (_launchPage, _pageEntities) = LoadLaunchPage();
         _placeholderPage = BuildPlaceholderPage();
-        _versionListPage = LoadVersionSubpage("VersionListPage", "版本列表");
+        Versions = new VersionSelectionController(shell, intents, library.Commands, store, feedback, directoryEffects);
+        _versionListPage = Versions.Page;
         _versionSettingsPage = LoadVersionSubpage("VersionSettingsPage", "版本设置");
         _versionModifyPage = LoadVersionSubpage("VersionModifyPage", "版本修改");
         _wardrobePage = LoadVersionSubpage("AccountWardrobePage", "更衣橱");
@@ -250,13 +243,8 @@ internal sealed class LaunchPageController : IDisposable
         }
 
         _lifetimeCancellation.Cancel();
+        Versions.Dispose();
         DismissAcquisitionDialog();
-        lock (_refreshGate)
-        {
-            _refreshCancellation?.Cancel();
-            _refreshCancellation?.Dispose();
-            _refreshCancellation = null;
-        }
 
         _lifetimeCancellation.Dispose();
     }
@@ -264,60 +252,27 @@ internal sealed class LaunchPageController : IDisposable
     private Task QueueRefresh()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        CancellationTokenSource? previous;
-        Task task;
         lock (_refreshGate)
         {
-            previous = _refreshCancellation;
-            _refreshCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                _lifetimeCancellation.Token);
-            long generation = ++_refreshGeneration;
-            task = RefreshGenerationAsync(generation, _refreshCancellation.Token);
-            _refreshTask = task;
+            _refreshTask = RefreshLibraryAsync();
+            return _refreshTask;
         }
-
-        previous?.Cancel();
-        previous?.Dispose();
-        return task;
     }
 
-    private async Task RefreshGenerationAsync(long generation, CancellationToken cancellationToken)
+    private async Task RefreshLibraryAsync()
     {
-        XsrResult<IReadOnlyList<MinecraftInstanceDescriptor>> result;
-        try
-        {
-            result = await _instanceSource.ReadAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            return;
-        }
+        if (!_libraryCommands.TryResolve(MinecraftLibraryRoutes.Refresh, out XsrCommandId id)) return;
+        _ = await _libraryCommands.Dispatch(id, new MinecraftLibraryRefreshCommand(), cancellationToken: _lifetimeCancellation.Token).Completion.ConfigureAwait(false);
+        ProjectLibrary();
+    }
 
-        lock (_refreshGate)
-        {
-            if (_disposed || cancellationToken.IsCancellationRequested || generation != _refreshGeneration)
-            {
-                return;
-            }
-
-            if (result.IsSuccess && result.Value is { Count: > 0 } instances)
-            {
-                MinecraftInstanceDescriptor selected = instances[0];
-                Publish(LaunchPageState.SelectedInstanceKey, selected.Id);
-                Publish(LaunchPageState.InstanceSummaryKey, selected.Id);
-            }
-            else
-            {
-                Publish(LaunchPageState.SelectedInstanceKey, string.Empty);
-                Publish(LaunchPageState.InstanceSummaryKey, NoInstances);
-                if (!result.IsSuccess)
-                {
-                    _feedback.Error($"实例扫描失败：{result.Error?.Message}");
-                }
-            }
-
-            UpdateLaunchButton();
-        }
+    private void ProjectLibrary()
+    {
+        if (_disposed || _store.ReadAppliedValue(_store.Resolve(MinecraftLibraryService.StateKey)) is not MinecraftLibrarySnapshot snapshot) return;
+        Publish(LaunchPageState.SelectedInstanceKey, snapshot.SelectedInstance?.Id ?? "");
+        Publish(LaunchPageState.InstanceSummaryKey, snapshot.SelectedInstance?.Id ?? (snapshot.IsLoading ? ScanningInstances : NoInstances));
+        Publish(LaunchPageState.InstanceDirectoryKey, snapshot.RootDirectory);
+        UpdateLaunchButton();
     }
 
     /// <summary>
@@ -653,6 +608,7 @@ internal sealed class LaunchPageController : IDisposable
 
     private void OnFramePreparing(object? sender, EventArgs e)
     {
+        ProjectLibrary();
         if (Interlocked.Exchange(ref _pendingCloseLaunching, 0) == 1)
         {
             CloseLaunchingPage();
@@ -942,7 +898,8 @@ internal sealed class LaunchPageController : IDisposable
 
         XsrCommandDispatch dispatch = _minecraft.Commands.Dispatch(
             commandId,
-            new MinecraftStartCommand(instanceId, selected),
+            new MinecraftStartCommand(instanceId, selected)
+            { MinecraftRootDirectory = ReadCell(LaunchPageState.InstanceDirectoryKey) },
             cancellationToken: _lifetimeCancellation.Token);
         XsrResult result = await dispatch.Completion.ConfigureAwait(false);
         if (_disposed)
@@ -1132,6 +1089,7 @@ internal sealed class LaunchPageController : IDisposable
     {
         public void OnChanged(XsrStateChange change)
         {
+            if (change.SemanticId == MinecraftLibraryService.StateKey) { owner.ProjectLibrary(); return; }
             if (change.SemanticId.Equals(MinecraftLaunchProgressState.StageKey)
                 || change.SemanticId.Equals(MinecraftLaunchProgressState.ProgressKey)
                 || change.SemanticId.Equals(MinecraftLaunchProgressState.MethodKey)

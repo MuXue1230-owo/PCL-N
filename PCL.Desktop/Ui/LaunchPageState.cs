@@ -25,6 +25,7 @@ internal static class LaunchPageState
     public static readonly XsrSemanticId AccountBackVisibleKey = XsrSemanticId.Parse("launch.account.back-visible");
     public static readonly XsrSemanticId AccountAddVisibleKey = XsrSemanticId.Parse("launch.account.add-visible");
     public static readonly XsrSemanticId InstanceSummaryKey = XsrSemanticId.Parse("launch.instance.summary");
+    public static readonly XsrSemanticId InstanceDirectoryKey = XsrSemanticId.Parse("launch.instance.directory");
     public static readonly XsrSemanticId InstanceAvailableKey = XsrSemanticId.Parse("launch.instance.available");
     public static readonly XsrSemanticId SelectedInstanceKey = XsrSemanticId.Parse("launch.selected.instance");
     public static readonly XsrSemanticId ActionLabelKey = XsrSemanticId.Parse("launch.action.label");
@@ -49,6 +50,8 @@ internal static class LaunchPageState
 
     public static void DeclareState(XsrStateStoreBuilder builder)
     {
+        VersionSelectionState.DeclareState(builder);
+        builder.Cell<string>(InstanceDirectoryKey, OwnerName);
         ArgumentNullException.ThrowIfNull(builder);
         AccountFormState.DeclareState(builder);
         DesktopFeedbackState.DeclareState(builder);

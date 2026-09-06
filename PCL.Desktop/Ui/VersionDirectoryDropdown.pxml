@@ -1,0 +1,15 @@
+<ContentHost xmlns="https://pcln.dev/pxml/2026" Key="LibraryDropdownLayer">
+  <Button Key="LibraryDropdownDismiss" Label="关闭目录下拉框" Command="ui.versions.dismiss" />
+  <StackPanel Key="LibraryDropdownCard" Orientation="Vertical" Margin="84,46,0,0" VerticalAlignment="Start" Padding="8" Spacing="8">
+    <StackPanel Key="LibraryDirectoryRows" Orientation="Vertical" Spacing="4" Scroll="true" Weight="1" />
+    <StackPanel Key="LibraryNameEditor" Orientation="Horizontal" Height="36" Spacing="6" IsVisible="{state versions.rename.visible}">
+      <TextInput Key="LibraryNameInput" Label="文件夹名称，留空则显示完整路径" Placeholder="文件夹名称" Weight="1" />
+      <Button Key="LibraryRenameSave" Content="保存" Label="保存文件夹名称" Command="ui.versions.rename-save" Width="56" Height="36" />
+      <Button Key="LibraryRenameCancel" Content="取消" Label="取消修改名称" Command="ui.versions.rename-cancel" Width="56" Height="36" />
+    </StackPanel>
+    <StackPanel Key="LibraryPathEditor" Orientation="Horizontal" Height="36" Spacing="8" IsVisible="{state versions.add.visible}">
+      <TextInput Key="LibraryDirectoryInput" Label="游戏目录的完整路径" Placeholder="完整文件夹路径" Weight="1" />
+      <Button Key="LibraryAddPath" Content="添加" Label="添加文件夹" Command="ui.versions.add-path" Width="56" Height="36" />
+    </StackPanel>
+  </StackPanel>
+</ContentHost>
