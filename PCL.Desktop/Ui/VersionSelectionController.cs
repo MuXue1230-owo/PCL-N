@@ -174,7 +174,12 @@ internal sealed class VersionSelectionController : IDisposable
         MinecraftLibrarySnapshot snapshot = Snapshot;
         if (_chooseDirectories)
         {
-            double height = Math.Min(snapshot.Directories.Count * 52 + 12 + (_editingRoot is null ? 0 : 44) + (_manualAdd ? 44 : 0),
+            // Rows are 48 px + 4 spacing each, plus the card's 8+8 padding: the card must be
+            // tall enough that the list does NOT overflow — an under-sized card makes
+            // CanScrollVertically true and paints a full-height track for a two-row list.
+            double height = Math.Min(
+                snapshot.Directories.Count * 48 + (4 * Math.Max(0, snapshot.Directories.Count - 1)) + 16
+                + (_editingRoot is null ? 0 : 44) + (_manualAdd ? 44 : 0),
                 Math.Max(96, _shell.Renderer.Viewport.Height - 160));
             XsrUiElement card = _shell.Tree.GetComponent<XsrUiElement>(_entities["LibraryDropdownCard"])!;
             if (card.Height != height) { card.Height = height; _shell.Tree.MarkDirty(_dropdown, XsrUiDirtyKinds.Layout); }
