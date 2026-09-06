@@ -108,6 +108,7 @@ internal static class Program
         ValidateSolution(repositoryRoot, failures);
         ValidateCommonBuildProperties(repositoryRoot, failures);
         ValidateServicesDoNotNameDesktop(repositoryRoot, failures);
+        ValidateNativeHostInterop(repositoryRoot, failures);
         ValidatePxmlControlCatalog(repositoryRoot, projectPaths, failures);
         ValidateWave3Ci(repositoryRoot, failures);
         ValidateAcyclicGraph(failures);
@@ -150,6 +151,19 @@ internal static class Program
                 failures.Add(
                     $"{relativePath} names the Desktop product layer; UI projection state belongs to the composition root.");
             }
+        }
+    }
+
+    private static void ValidateNativeHostInterop(string repositoryRoot, List<string> failures)
+    {
+        foreach (string file in Directory.EnumerateFiles(Path.Combine(repositoryRoot, "PCL.Desktop"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (IsBuildOutput(file)) continue;
+            string source = File.ReadAllText(file);
+            if (source.Contains("[ComImport", StringComparison.Ordinal)
+                || source.Contains("Marshal.GetObjectForIUnknown", StringComparison.Ordinal)
+                || source.Contains("Marshal.GetTypedObjectForIUnknown", StringComparison.Ordinal))
+                failures.Add($"{Path.GetRelativePath(repositoryRoot, file)} uses built-in COM, unsupported by NativeAOT; use generated COM wrappers.");
         }
     }
 

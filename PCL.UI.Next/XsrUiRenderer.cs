@@ -22,6 +22,8 @@ public sealed partial class XsrUiRenderer
     private XsrUiEntityId _focused;
     private readonly Dictionary<int, XsrUiSize> _desiredSizes = [];
     private readonly Dictionary<int, XsrUiSize> _stackContentSizes = [];
+    private readonly Dictionary<int, XsrUiSize> _measureConstraints = [];
+    private readonly HashSet<int> _widthSensitiveMeasures = [];
     private readonly Dictionary<int, XsrUiRect> _paintRects = [];
     private readonly Dictionary<int, XsrUiRect> _arrangedSlots = [];
     private readonly HashSet<int> _measuredThisPass = [];
@@ -202,6 +204,8 @@ public sealed partial class XsrUiRenderer
         foreach (int id in _desiredSizes.Keys.Where(id => !_tree.IsIndexAlive(id)).ToArray())
         {
             _ = _desiredSizes.Remove(id);
+            _ = _measureConstraints.Remove(id);
+            _ = _widthSensitiveMeasures.Remove(id);
         }
 
         foreach (int id in _paintRects.Keys.Where(id => !_tree.IsIndexAlive(id)).ToArray())
@@ -247,10 +251,13 @@ public sealed partial class XsrUiRenderer
     {
         // Subtrees without layout-relevant dirt keep the previous pass's desired size; anything
         // with a dirty descendant re-aggregates so containers pick up new child measurements.
-        if (!_tree.HasDirtyLayoutSubtree(entity) && _desiredSizes.TryGetValue(entity.Index, out XsrUiSize cached))
+        if (!_tree.HasDirtyLayoutSubtree(entity) && _desiredSizes.TryGetValue(entity.Index, out XsrUiSize cached)
+            && (!_widthSensitiveMeasures.Contains(entity.Index)
+                || _measureConstraints.TryGetValue(entity.Index, out XsrUiSize constraint) && constraint.Width == available.Width))
         {
             return cached;
         }
+        _measureConstraints[entity.Index] = available;
 
         if (_measuredThisPass.Add(entity.Index))
         {
@@ -274,12 +281,16 @@ public sealed partial class XsrUiRenderer
         {
             contentHeight = Math.Min(contentHeight, constrainedHeight + padding.Vertical);
         }
+        double indicatorGutter = VerticalIndicatorGutter(entity);
+        contentWidth = Math.Max(0, contentWidth - indicatorGutter);
         double width = 0;
         double height = 0;
+        bool widthSensitive = false;
 
         if (_tree.GetComponent<XsrUiText>(entity) is { } text)
         {
             XsrUiVisualStyle? textStyle = _tree.GetComponent<XsrUiVisualStyle>(entity);
+            widthSensitive = textStyle?.WrapText == true;
             double wrapWidth = textStyle?.WrapText == true
                 ? element?.Width ?? Math.Max(0, contentWidth - padding.Horizontal)
                 : double.PositiveInfinity;
@@ -298,6 +309,7 @@ public sealed partial class XsrUiRenderer
             foreach (XsrUiEntityId child in _tree.Children(entity).Where(IsVisible))
             {
                 XsrUiSize size = Measure(child, new XsrUiSize(contentWidth, contentHeight));
+                widthSensitive |= _widthSensitiveMeasures.Contains(child.Index);
                 width = Math.Max(width, size.Width);
                 height = Math.Max(height, size.Height);
             }
@@ -318,6 +330,7 @@ public sealed partial class XsrUiRenderer
                     Math.Max(0, contentWidth - padding.Horizontal),
                     Math.Max(0, contentHeight - padding.Vertical));
                 XsrUiSize childDesired = Measure(child, childAvailable);
+                widthSensitive |= _widthSensitiveMeasures.Contains(child.Index);
                 XsrUiThickness childMargin = _tree.GetComponent<XsrUiElement>(child)?.Margin ?? default;
                 bool isMainWidth = stack.Direction == XsrUiOrientation.Horizontal;
                 double childMain = isMainWidth
@@ -334,9 +347,9 @@ public sealed partial class XsrUiRenderer
             main += Math.Max(0, children - 1) * stack.Spacing;
             width = stack.Direction == XsrUiOrientation.Horizontal ? main : cross;
             height = stack.Direction == XsrUiOrientation.Horizontal ? cross : main;
-            width += padding.Horizontal;
-            height += padding.Vertical;
             _stackContentSizes[entity.Index] = new XsrUiSize(width, height);
+            width += padding.Horizontal + indicatorGutter;
+            height += padding.Vertical;
         }
 
         // Explicit sizes constrain the content box; padding adds on top of them.
@@ -354,6 +367,8 @@ public sealed partial class XsrUiRenderer
         height = ConstrainDimension(height, element?.MinHeight, element?.MaxHeight, padding.Vertical);
 
         XsrUiSize desired = new(width, height);
+        if (widthSensitive) _widthSensitiveMeasures.Add(entity.Index);
+        else _widthSensitiveMeasures.Remove(entity.Index);
         _desiredSizes[entity.Index] = desired;
         return desired;
     }
@@ -468,6 +483,7 @@ public sealed partial class XsrUiRenderer
         }
 
         XsrUiScroll? scroll = _tree.GetComponent<XsrUiScroll>(entity);
+        contentWidth = Math.Max(0, contentWidth - VerticalIndicatorGutter(entity));
         if (scroll is not null)
         {
             // Clamp scroll offsets to the measured content extent; children are placed into
@@ -492,14 +508,6 @@ public sealed partial class XsrUiRenderer
         double cursor = (stack.Direction == XsrUiOrientation.Vertical ? contentY : contentX) - (stack.Direction == XsrUiOrientation.Vertical ? scrollY : scrollX);
         double crossAvailable = stack.Direction == XsrUiOrientation.Vertical ? contentWidth : contentHeight;
 
-        // Scroll containers reserve a fixed gutter at their right edge for the indicator:
-        // children lay out inside the reduced cross size so no child background can cover it.
-        if (scroll is not null && scroll.ShowsVerticalIndicator)
-        {
-            const double indicatorGutter = 12;
-            if (stack.Direction == XsrUiOrientation.Vertical) contentWidth = Math.Max(0, contentWidth - indicatorGutter);
-            else crossAvailable = Math.Max(0, crossAvailable - indicatorGutter);
-        }
         double crossOrigin = stack.Direction == XsrUiOrientation.Vertical ? contentX : contentY;
         double crossScroll = stack.Direction == XsrUiOrientation.Vertical ? scrollX : scrollY;
         XsrUiEntityId[] visibleChildren = [.. _tree.Children(entity)
@@ -565,6 +573,10 @@ public sealed partial class XsrUiRenderer
             Layout(overlay, new XsrUiRect(contentX, contentY, contentWidth, contentHeight));
         }
     }
+
+    private double VerticalIndicatorGutter(XsrUiEntityId entity) =>
+        _tree.GetComponent<XsrUiStackPanel>(entity) is not null
+        && _tree.GetComponent<XsrUiScroll>(entity) is { ShowsVerticalIndicator: true } ? 12 : 0;
 
     private Dictionary<int, double> AllocateWeightedMainSizes(
         XsrUiOrientation direction,
@@ -1283,7 +1295,7 @@ public sealed partial class XsrUiRenderer
             scrollSnapshot = new XsrUiScrollSnapshot(
                 scrollState.OffsetX,
                 scrollState.OffsetY,
-                rect.Width,
+                Math.Max(0, rect.Width - VerticalIndicatorGutter(entity)),
                 rect.Height,
                 scrollContent.Width,
                 scrollContent.Height,

@@ -118,6 +118,14 @@ jobs:
           binary="$RUNNER_TEMP/launcher/PCL.Desktop"
           if [[ '${{ matrix.rid }}' == win-* ]]; then binary="${binary}.exe"; fi
           "$binary" --validate-shell
+      - name: Verify Windows game window integration under NativeAOT
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          dotnet publish tests/PCL.Desktop.Tests/PCL.Desktop.Tests.csproj -c Release \
+            -r '${{ matrix.rid }}' --self-contained true -m:1 -nodeReuse:false \
+            -p:PublishAot=true -p:StripSymbols=true --output "$RUNNER_TEMP/window-integration"
+          "$RUNNER_TEMP/window-integration/PCL.Desktop.Tests.exe" --window-integration-smoke
       - name: Build native installers and portable archive
         shell: bash
         run: python eng/release/package.py --payload "$RUNNER_TEMP/launcher" --output artifacts --rid '${{ matrix.rid }}' --version "$PRODUCT_VERSION"

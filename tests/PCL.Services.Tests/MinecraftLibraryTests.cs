@@ -102,6 +102,16 @@ internal static partial class Program
         cancellation.Cancel(); source.Requests[3].SetCanceled(cancellation.Token);
         AssertFalse((await cancelled).IsSuccess); AssertFalse(fixture.Snapshot.IsLoading);
         AssertEqual("same", fixture.Snapshot.SelectedInstanceId);
+        long beforeForget = fixture.Snapshot.Revision;
+        Task<XsrResult> forget = service.ForgetDirectoryAsync(b);
+        AssertEqual(beforeForget + 1, fixture.Snapshot.Revision);
+        AssertTrue(fixture.Snapshot.IsLoading);
+        AssertEqual(a, fixture.Snapshot.RootDirectory);
+        AssertEqual("", fixture.Snapshot.SelectedInstanceId);
+        source.Requests[4].SetResult([LibraryDescriptor(a, "remaining")]);
+        AssertTrue((await forget).IsSuccess);
+        AssertEqual(beforeForget + 2, fixture.Snapshot.Revision);
+        AssertFalse(fixture.Snapshot.IsLoading);
     }
 
     private static async ValueTask LibraryFailedSavesAndUnavailableRootsRemainHonest()

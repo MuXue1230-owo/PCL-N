@@ -617,7 +617,14 @@ public sealed class MinecraftLaunchCoordinator
                 log?.Info("Launch", $"Game window confirmed pid={processId}.");
                 // The window exists now: the host detaches it from the launcher's taskbar group
                 // while the game keeps its own icon. Calling earlier races window creation.
-                gameWindowAppeared?.Invoke(processId);
+                try
+                {
+                    gameWindowAppeared?.Invoke(processId);
+                }
+                catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
+                {
+                    log?.Warn("Launch", $"Game window integration failed pid={processId}: {exception.GetType().Name}: {exception.Message}");
+                }
                 return GameWindowWaitResult.Visible;
             }
 

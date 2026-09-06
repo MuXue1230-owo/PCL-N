@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.Marshalling;
 using System.Runtime.Versioning;
 
 namespace PCL.Desktop.Ui;
@@ -9,7 +10,7 @@ namespace PCL.Desktop.Ui;
 /// own (grass block) icon: the per-window AppUserModelID breaks the launcher group without
 /// relabeling the window, which an icon-overriding launcher AUMID would do.
 /// </summary>
-internal static class MinecraftWindowIntegration
+internal static partial class MinecraftWindowIntegration
 {
     /// <summary>
     /// Assigns a per-launch AppUserModelID to the game's top-level windows so the taskbar
@@ -53,18 +54,15 @@ internal static class MinecraftWindowIntegration
                 return;
             }
 
-            IPropertyStore store = (IPropertyStore)Marshal.GetObjectForIUnknown(storePtr);
             try
             {
-                if (PropVariantFromString(appId, out PropVariant variant) != 0)
-                {
-                    return;
-                }
+                IPropertyStore store = (IPropertyStore)Wrappers.GetOrCreateObjectForComInstance(storePtr, CreateObjectFlags.None);
+                PropVariant variant = new() { ValueType = 31, Pointer = Marshal.StringToCoTaskMemUni(appId) };
 
                 try
                 {
-                    _ = store.SetValue(ref AppUserModelIdKey, variant);
-                    _ = store.Commit();
+                    Marshal.ThrowExceptionForHR(store.SetValue(in AppUserModelIdKey, in variant));
+                    Marshal.ThrowExceptionForHR(store.Commit());
                 }
                 finally
                 {
@@ -76,7 +74,7 @@ internal static class MinecraftWindowIntegration
                 Marshal.Release(storePtr);
             }
         }
-        catch (COMException)
+        catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
         {
             // A game window that dies mid-write must not break the launch flow.
         }
@@ -86,7 +84,7 @@ internal static class MinecraftWindowIntegration
         new Guid("9F4C285F-C90D-11D2-9D8B-2ED9F57BD72F"), 5);
 
     [StructLayout(LayoutKind.Sequential)]
-    private struct PropertyKey
+    internal struct PropertyKey
     {
         public Guid FormatId;
         public int PropertyId;
@@ -99,25 +97,30 @@ internal static class MinecraftWindowIntegration
     }
 
     [StructLayout(LayoutKind.Explicit)]
-    private struct PropVariant
+    internal struct PropVariant
     {
         [FieldOffset(0)] public short ValueType;
         [FieldOffset(8)] public nint Pointer;
+        // The native union contains a count + pointer, making PROPVARIANT 24 bytes
+        // on x64/arm64 and 16 on x86 even when only VT_LPWSTR is being written.
+        [FieldOffset(8)] public CountedPointer Storage;
     }
 
     /// <summary>Minimal IPropertyStore surface: SetValue + Commit are all the AUMID write needs.</summary>
-    [ComImport, Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
-    private interface IPropertyStore
+    [GeneratedComInterface(Options = ComInterfaceOptions.ComObjectWrapper)]
+    [Guid("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    internal partial interface IPropertyStore
     {
         [PreserveSig] int GetCount(out int count);
         [PreserveSig] int GetAt(int index, out PropertyKey key);
         [PreserveSig] int GetValue(ref PropertyKey key, out PropVariant value);
-        [PreserveSig] int SetValue(ref PropertyKey key, PropVariant value);
+        [PreserveSig] int SetValue(in PropertyKey key, in PropVariant value);
         [PreserveSig] int Commit();
     }
 
-    [DllImport("propsys.dll")]
-    private static extern int PropVariantFromString([MarshalAs(UnmanagedType.LPWStr)] string value, out PropVariant variant);
+    private static readonly StrategyBasedComWrappers Wrappers = new();
+    [StructLayout(LayoutKind.Sequential)]
+    internal struct CountedPointer { public uint Count; public nint Pointer; }
 
     [DllImport("ole32.dll")]
     private static extern int PropVariantClear(ref PropVariant variant);

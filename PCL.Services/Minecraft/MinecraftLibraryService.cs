@@ -135,14 +135,6 @@ public sealed class MinecraftLibraryService : IDisposable
             if (!saved.IsSuccess) return saved;
             if (refresh)
             {
-                Publish(_snapshot with
-                {
-                    Directories = Array.AsReadOnly(remaining),
-                    RootDirectory = root,
-                    Instances = [],
-                    SelectedInstanceId = "",
-                    IsLoading = true
-                });
                 scanTask = BeginScanLocked(root, cancellationToken);
             }
             else

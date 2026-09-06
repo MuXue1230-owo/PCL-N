@@ -15,8 +15,14 @@ namespace PCL.Desktop.Tests;
 
 internal static partial class Program
 {
-    public static void Main()
+    public static void Main(string[] args)
     {
+        if (args.Contains("--window-integration-smoke"))
+        {
+            WindowPropertyStoreRoundTripsAppId();
+            Console.WriteLine("PASS: native window property store roundtrip");
+            return;
+        }
         foreach ((string name, Action body) in TestCases)
         {
             body();
@@ -28,6 +34,7 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("Windows property store roundtrips the game AUMID", WindowPropertyStoreRoundTripsAppId),
         ("version selection uses the captured directory for launch and restores each selection", VersionSelectionUsesDirectoryQualifiedLaunch),
         ("version list remains compact searchable and scrollable with distinct icons", VersionListKeepsCompactGeometryAndIcons),
         ("directory pickers cannot publish after leaving the version page", VersionDirectoryPickerDiscardsLateResult),

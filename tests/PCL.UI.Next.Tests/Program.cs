@@ -6,6 +6,10 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("VerticalStackReservesVerticalIndicatorGutter", Sync(VerticalStackReservesVerticalIndicatorGutter)),
+        ("HorizontalStackReservesRightSideVerticalIndicatorGutter", Sync(HorizontalStackReservesRightSideVerticalIndicatorGutter)),
+        ("WrappedContentMeasuresInsideIndicatorViewport", Sync(WrappedContentMeasuresInsideIndicatorViewport)),
+        ("IndicatorGutterAffectsScrollExtentCoherently", Sync(IndicatorGutterAffectsScrollExtentCoherently)),
         // XSR-201: ECS kernel.
         ("entities create and destroy with recycled handles", Sync(EntityCreateDestroyRecyclesHandles)),
         ("attach preserves deterministic child order", Sync(AttachPreservesDeterministicChildOrder)),

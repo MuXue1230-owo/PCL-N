@@ -643,6 +643,19 @@ internal static partial class Program
             MinecraftLaunchCoordinator.GameWindowWaitResult wait = await MinecraftLaunchCoordinator.WaitForGameWindowAsync(
                 new UnsupportedWindowProbe(), null, session, CancellationToken.None);
             AssertEqual(MinecraftLaunchCoordinator.GameWindowWaitResult.Unsupported, wait);
+            foreach (Exception decorationFailure in new Exception[] { new PlatformNotSupportedException("COM unavailable"), new InvalidOperationException("decoration failed") })
+            {
+                bool invoked = false;
+                wait = await MinecraftLaunchCoordinator.WaitForGameWindowAsync(
+                    new ImmediateWindowProbe(), null, session, CancellationToken.None, _ =>
+                    {
+                        invoked = true;
+                        throw decorationFailure;
+                    });
+                AssertTrue(invoked);
+                AssertEqual(MinecraftLaunchCoordinator.GameWindowWaitResult.Visible, wait);
+                AssertFalse(port.LastProcess!.HasExited);
+            }
             AssertTrue(System.Diagnostics.Stopwatch.GetElapsedTime(startedAt) < TimeSpan.FromSeconds(5),
                 "the unsupported probe waited for the window limit");
         }
