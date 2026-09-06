@@ -4,6 +4,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 
 TAG = re.compile(r"v?((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))(?:\.(alpha|beta)\.([1-9]\d*)|\.ci\.([0-9a-f]{6}))?$")
@@ -45,11 +46,22 @@ def git(*args):
     return subprocess.check_output(["git", *args], encoding="utf-8").strip()
 
 
-def changelog(version, previous, sha):
-    # With a previous tag the range is previous..sha; for the FIRST version only the tagged
-    # commit itself is described — a bare `git log <sha>` would sweep in the entire history
-    # of the repository, which is not this release's content.
-    revision = [f"{previous}..{sha}"] if previous else ["-1", sha]
+def changelog(version, previous, sha, base=""):
+    # With a previous tag the range is previous..sha. For the FIRST version of this product
+    # line the release scope is this branch's own work: the commits since the merge-base with
+    # the base branch (e.g. origin/dev). Without a base ref the scope falls back to the tagged
+    # commit alone — a bare `git log <sha>` would sweep in the entire repository history,
+    # including other product lines, which is not this release's content.
+    if previous:
+        revision = [f"{previous}..{sha}"]
+    elif base:
+        try:
+            revision = [f"{git('merge-base', base, sha)}..{sha}"]
+        except subprocess.CalledProcessError:
+            print(f"warning: merge-base with {base} failed; describing only the tagged commit", file=sys.stderr)
+            revision = ["-1", sha]
+    else:
+        revision = ["-1", sha]
     messages = git("log", "--format=%h%x09%B%x00", *revision).split("\0")
     entries = []
     for message in messages:
@@ -104,6 +116,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", default=os.environ.get("GITHUB_REF", ""))
     parser.add_argument("--sha", default=os.environ.get("GITHUB_SHA", ""))
+    parser.add_argument("--base", default=os.environ.get("RELEASE_BASE", ""),
+                        help="branch scoping the first release's changelog, e.g. origin/dev")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     sha = git("rev-parse", f"{args.sha}^{{commit}}")
@@ -115,7 +129,7 @@ def main():
     previous = next((tag for tag in git("tag", "--merged", sha, "--sort=-creatordate").splitlines()
                      if (bare := tag.removeprefix("v")) != prefix and bare.startswith(prefix + ".")
                      and TAG.fullmatch(tag) and git("rev-parse", f"{tag}^{{commit}}") != sha), None)
-    changelog_text = changelog(data["version"], previous, sha)
+    changelog_text = changelog(data["version"], previous, sha, args.base)
     body = release_body(data, changelog_text, previous)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "metadata.json").write_text(json.dumps(data, indent=2), encoding="utf-8")

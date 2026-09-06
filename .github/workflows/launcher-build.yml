@@ -28,7 +28,7 @@ jobs:
           python-version: '3.12'
       - run: python -m unittest discover -s eng/release -p 'test_*.py'
       - id: version
-        run: python eng/release/metadata.py --output release-metadata
+        run: python eng/release/metadata.py --base origin/dev --output release-metadata
       - uses: actions/upload-artifact@v4
         with:
           name: release-metadata

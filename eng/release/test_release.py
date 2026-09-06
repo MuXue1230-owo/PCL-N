@@ -101,6 +101,44 @@ class ReleaseTests(unittest.TestCase):
                  and run("rev-parse", f"{tag}^{{commit}}") != sha),
                 None))
 
+    def test_first_version_changelog_scopes_to_the_base_branch(self):
+        # The first release of a product line describes the branch's own work — commits
+        # since the merge-base with the base branch — not the whole repository history.
+        with tempfile.TemporaryDirectory() as work:
+            def run(*args, **kwargs):
+                return subprocess.check_output(["git", "-C", work, *args], encoding="utf-8").strip()
+            run("init", "-q")
+            run("config", "user.email", "test@example.com")
+            run("config", "user.name", "Test")
+            (Path(work) / "base.txt").write_text("base", encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", "chore: base line history")
+            run("branch", "dev")
+            run("checkout", "-q", "-b", "feature")
+            (Path(work) / "one.txt").write_text("one", encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", "feat: first branch commit")
+            (Path(work) / "two.txt").write_text("two", encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", "feat: second branch commit")
+            run("tag", "v2.0.0.alpha.1")
+            sha = run("rev-parse", "HEAD")
+
+            import metadata
+            original_git = metadata.git
+            metadata.git = lambda *args: subprocess.check_output(["git", "-C", work, *args], encoding="utf-8").strip()
+            try:
+                notes = metadata.changelog("2.0.0.alpha.1", None, sha, "dev")
+                fallback = metadata.changelog("2.0.0.alpha.1", None, sha, "missing-ref")
+            finally:
+                metadata.git = original_git
+            self.assertIn("first branch commit", notes)
+            self.assertIn("second branch commit", notes)
+            self.assertNotIn("base line history", notes)
+            # An unresolvable base falls back to describing only the tagged commit.
+            self.assertNotIn("first branch commit", fallback)
+            self.assertIn("second branch commit", fallback)
+
     def test_release_body_lists_every_package_with_purpose(self):
         from metadata import release_body
         body = release_body({"version": "2.0.0.alpha.1", "channel": "alpha"}, "# 更新内容\n\n- fix", "v2.0.0.alpha.0")
