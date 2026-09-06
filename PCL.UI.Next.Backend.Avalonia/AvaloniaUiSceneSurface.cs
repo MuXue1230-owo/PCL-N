@@ -3,7 +3,6 @@ using Avalonia;
 using Avalonia.Automation;
 using Avalonia.Automation.Peers;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Threading;
@@ -26,13 +25,14 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private readonly XsrUiShell _shell;
     private readonly object _commitGate = new();
     private readonly Dictionary<XsrUiEntityId, AvaloniaUiSceneNodeControl> _controls = [];
-    private AdornerLayer? _adornerLayer;
-    private ScrollIndicatorAdorner? _scrollAdorner;
     private readonly List<AvaloniaUiSceneNodeControl> _outgoingControls = [];
     private readonly Dictionary<XsrUiEntityId, double> _capsuleTargets = [];
     private readonly Dictionary<XsrUiEntityId, double> _progressTargets = [];
     private readonly Dictionary<XsrUiEntityId, long> _pagerRevisions = [];
     private XsrUiScene? _scene;
+
+    /// <summary>The scene currently committed to this surface, for window-level overlays.</summary>
+    internal XsrUiScene? DebugScene => _scene;
     private XsrUiEntityId _lastPageRoot;
     private XsrSemanticId _lastNavigation;
     private readonly Dictionary<XsrUiEntityId, string> _transitionKeys = [];
@@ -187,31 +187,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         _handCursor.Dispose();
         _textCursor.Dispose();
         GC.SuppressFinalize(this);
-    }
-
-    protected override void OnAttachedToVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnAttachedToVisualTree(e);
-        // The adorner layer only exists once the surface is in the visual tree; the indicator
-        // adorner must also outlive scene commits without entering Children.
-        if (AdornerLayer.GetAdornerLayer(this) is { } layer)
-        {
-            _adornerLayer = layer;
-            _scrollAdorner = new ScrollIndicatorAdorner(this);
-            _adornerLayer.Children.Add(_scrollAdorner);
-        }
-    }
-
-    protected override void OnDetachedFromVisualTree(VisualTreeAttachmentEventArgs e)
-    {
-        base.OnDetachedFromVisualTree(e);
-        if (_adornerLayer is not null && _scrollAdorner is not null)
-        {
-            _ = _adornerLayer.Children.Remove(_scrollAdorner);
-        }
-
-        _adornerLayer = null;
-        _scrollAdorner = null;
     }
 
     protected override Size MeasureOverride(Size availableSize)
@@ -406,7 +381,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         InvalidateMeasure();
         InvalidateArrange();
         InvalidateVisual();
-        _scrollAdorner?.InvalidateVisual();
     }
 
     private void UpdatePointerCursor(XsrUiPoint point) =>
@@ -666,29 +640,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     /// notification z-order depends on it). The adorner layer sits above every child without
     /// touching Children.
     /// </summary>
-    private sealed class ScrollIndicatorAdorner(AvaloniaUiSceneSurface owner) : Control
-    {
-        public override void Render(DrawingContext context)
-        {
-            base.Render(context);
-            if (owner._scene is null)
-            {
-                return;
-            }
-
-            for (int index = 0; index < owner._scene.Count; index++)
-            {
-                XsrUiSceneNode node = owner._scene[index];
-                if (node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
-                {
-                    AvaloniaUiSceneNodeControl.DrawScrollIndicator(
-                        context,
-                        new Rect(node.Rect.X, node.Rect.Y, node.Rect.Width, node.Rect.Height),
-                        scroll);
-                }
-            }
-        }
-    }
 }
 
 /// <summary>Immutable scene data delivered to backend-native chrome after a commit.</summary>

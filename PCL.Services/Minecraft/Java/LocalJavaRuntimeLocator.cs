@@ -27,7 +27,10 @@ public sealed class LocalJavaRuntimeLocator : IJavaRuntimeLocator
     public async ValueTask<IReadOnlyList<JavaRuntimeCandidate>> FindAllAsync(
         CancellationToken cancellationToken = default)
     {
-        HashSet<string> homes = new(GetPathComparer());
+        // Executables, not homes: a resolved root may be a real Java home (bin/java) OR a
+        // direct-executable directory (Oracle javapath shims). Collapsing both into "home +
+        // /bin/java" dropped every shim the earlier stage had just accepted.
+        HashSet<string> executables = new(GetPathComparer());
         foreach (JavaSearchRoot root in EnumerateSearchRoots())
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -35,24 +38,25 @@ public sealed class LocalJavaRuntimeLocator : IJavaRuntimeLocator
             {
                 foreach (string home in ExpandRoot(root.Path, cancellationToken))
                 {
-                    homes.Add(home);
+                    if (ResolveJavaExecutable(home) is { } homeExecutable)
+                    {
+                        executables.Add(homeExecutable);
+                    }
                 }
             }
-            else if (ResolveJavaHome(root.Path) is { } directHome)
+            else if (ResolveJavaExecutable(root.Path) is { } directExecutable)
             {
-                homes.Add(directHome);
+                executables.Add(directExecutable);
             }
         }
 
-        List<string> executables = homes
-            .Select(home => Path.Combine(home, "bin", JavaExecutableName()))
-            .Where(static executable => File.Exists(executable))
-            .Distinct(GetPathComparer())
+        List<string> ordered = executables
             .ToList();
-        _log?.Info("Java", $"Runtime discovery started java_homes={homes.Count} executables={executables.Count}");
+        ordered.Sort(GetPathComparer());
+        _log?.Info("Java", $"Runtime discovery started executables={ordered.Count}");
 
         List<JavaRuntimeCandidate> candidates = [];
-        foreach (string path in executables.OrderBy(static path => path, GetPathComparer()))
+        foreach (string path in ordered)
         {
             cancellationToken.ThrowIfCancellationRequested();
             JavaRuntimeCandidate? candidate = await InspectAsync(path, cancellationToken)
@@ -254,6 +258,40 @@ public sealed class LocalJavaRuntimeLocator : IJavaRuntimeLocator
     /// a macOS bundle resolves through <c>Contents/Home</c>, and a directory is the home
     /// itself (the probe verifies it actually runs).
     /// </summary>
+    /// <summary>
+    /// Resolves a search path to the final executable to probe: the path itself when it is a
+    /// java executable, <c>bin/java</c> inside a real home, the executable sitting directly in
+    /// the directory (Oracle javapath shims), or the macOS bundle layout. Returns null when
+    /// nothing runnable exists here.
+    /// </summary>
+    internal static string? ResolveJavaExecutable(string path)
+    {
+        if (File.Exists(path) && IsJavaExecutableName(Path.GetFileName(path)))
+        {
+            return Path.GetFullPath(path);
+        }
+
+        if (!Directory.Exists(path))
+        {
+            return null;
+        }
+
+        string normal = Path.Combine(path, "bin", JavaExecutableName());
+        if (File.Exists(normal))
+        {
+            return Path.GetFullPath(normal);
+        }
+
+        string direct = Path.Combine(path, JavaExecutableName());
+        if (File.Exists(direct))
+        {
+            return Path.GetFullPath(direct);
+        }
+
+        string mac = Path.Combine(path, "Contents", "Home", "bin", JavaExecutableName());
+        return File.Exists(mac) ? Path.GetFullPath(mac) : null;
+    }
+
     internal static string? ResolveJavaHome(string path)
     {
         if (File.Exists(path) && IsJavaExecutableName(Path.GetFileName(path)))

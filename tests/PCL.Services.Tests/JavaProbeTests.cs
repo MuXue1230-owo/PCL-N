@@ -73,6 +73,27 @@ internal static partial class Program
         }
     }
 
+    private static void JavaSearchRetainsDirectPathShimExecutable()
+    {
+        // Oracle javapath: a directory whose executable sits directly inside it, with no
+        // bin/ child. The scan must keep it as a probe candidate instead of re-interpreting
+        // it as a home and looking for bin/java that will never exist.
+        string shim = Path.Combine(Path.GetTempPath(), "nexa-java-shim", Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(shim);
+            File.WriteAllBytes(Path.Combine(shim, OperatingSystem.IsWindows() ? "java.exe" : "java"), [0xCA, 0xFE]);
+
+            AssertEqual(Path.GetFullPath(Path.Combine(shim, OperatingSystem.IsWindows() ? "java.exe" : "java")),
+                LocalJavaRuntimeLocator.ResolveJavaExecutable(shim));
+            AssertTrue(LocalJavaRuntimeLocator.ResolveJavaExecutable(Path.Combine(shim, "bin")) is null);
+        }
+        finally
+        {
+            Directory.Delete(shim, recursive: true);
+        }
+    }
+
     private static void JavaProbeRejectsUnrecognizedOutput()
     {
         AssertFalse(LocalJavaRuntimeLocator.TryCreateCandidate(

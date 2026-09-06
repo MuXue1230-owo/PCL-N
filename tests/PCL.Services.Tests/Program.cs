@@ -148,6 +148,7 @@ internal static partial class Program
         ("java probe parses the legacy version line", Sync(JavaProbeParsesLegacyVersionLine)),
         ("java probe rejects unrecognized output", Sync(JavaProbeRejectsUnrecognizedOutput)),
         ("java expand root finds homes in vendor trees", Sync(ExpandRootFindsHomesInVendorTrees)),
+        ("java search retains a direct-path shim executable", Sync(JavaSearchRetainsDirectPathShimExecutable)),
         ("cross capability page has no state id collisions", CrossCapabilityPageHasNoStateIdCollisions),
         // XSR-513: online account flows.
         ("the microsoft device login runs the full chain", MicrosoftDeviceLoginRunsTheFullChain),

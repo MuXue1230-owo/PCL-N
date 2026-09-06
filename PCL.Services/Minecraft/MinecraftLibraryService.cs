@@ -108,23 +108,29 @@ public sealed class MinecraftLibraryService : IDisposable
             root = existing?.Path ?? root;
             XsrResult saved = Save(_document with { ActiveDirectory = root, Directories = directories });
             if (!saved.IsSuccess) return saved;
-            InvalidateScan();
             Publish(new(_snapshot.Revision, Array.AsReadOnly(directories), root, [], "", true));
         }
+        // RefreshAsync performs the single scan invalidation; invalidating here as well used
+        // to churn two generations and one extra loading publication for the same change.
         return await RefreshAsync(cancellationToken).ConfigureAwait(false);
     }
 
     public async Task<XsrResult> ForgetDirectoryAsync(string path, CancellationToken cancellationToken = default)
     {
+        // The X command contract accepts any path spelling; registration always stores
+        // normalized forms, so the forget must normalize before comparing.
+        string normalized;
+        try { normalized = NormalizeDirectory(path); }
+        catch (ArgumentException exception) { return XsrResult.Failure(MinecraftErrors.InvalidRequest(exception.Message)); }
         bool refresh;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
             cancellationToken.ThrowIfCancellationRequested();
-            MinecraftLibraryDirectory[] remaining = [.. _document.Directories.Where(item => !PathComparer.Equals(item.Path, path))];
+            MinecraftLibraryDirectory[] remaining = [.. _document.Directories.Where(item => !PathComparer.Equals(item.Path, normalized))];
             if (remaining.Length == _document.Directories.Length || remaining.Length == 0)
                 return XsrResult.Failure(MinecraftErrors.InvalidRequest("keep at least one registered directory."));
-            refresh = PathComparer.Equals(_document.ActiveDirectory, path);
+            refresh = PathComparer.Equals(_document.ActiveDirectory, normalized);
             string root = refresh ? remaining[0].Path : _document.ActiveDirectory;
             XsrResult saved = Save(_document with { Directories = remaining, ActiveDirectory = root });
             if (!saved.IsSuccess) return saved;
@@ -229,7 +235,12 @@ public sealed class MinecraftLibraryService : IDisposable
                 if (document is not { SchemaVersion: 1, Directories.Length: > 0 } || document.Directories.Any(item => item is null)) throw new JsonException();
                 MinecraftLibraryDirectory[] directories = [.. document.Directories.Select(item =>
                     new MinecraftLibraryDirectory(NormalizeDirectory(item.Path), item.SelectedInstanceId ?? "", item.Name?.Trim() ?? "")).DistinctBy(item => item.Path, PathComparer)];
-                string active = directories.FirstOrDefault(item => PathComparer.Equals(item.Path, document.ActiveDirectory))?.Path ?? directories[0].Path;
+                // A hand-edited or pre-normalization document may carry a non-canonical
+                // active path; normalize before matching so it still resolves.
+                string normalizedActive;
+                try { normalizedActive = NormalizeDirectory(document.ActiveDirectory); }
+                catch (ArgumentException) { normalizedActive = directories[0].Path; }
+                string active = directories.FirstOrDefault(item => PathComparer.Equals(item.Path, normalizedActive))?.Path ?? directories[0].Path;
                 return new(1, active, directories);
             }
             catch (Exception exception) when (exception is JsonException or ArgumentException or NotSupportedException)
