@@ -4,6 +4,11 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("installed version families preserve legacy icon distinctions and inheritance", InstalledVersionKindsPreserveLegacyDistinctions),
+        ("library selections retain directory identity and survive restart", LibraryRemembersDirectoryQualifiedSelection),
+        ("library rejects stale scans and preserves newer selections", LibraryRejectsStaleScansAndPreservesLiveSelection),
+        ("library save failures and unavailable roots preserve truth", LibraryFailedSavesAndUnavailableRootsRemainHonest),
+        ("library preserves unknown persisted schemas", LibraryUnknownDocumentsArePreserved),
         ("operation breadcrumbs retain stage source and one terminal outcome", Sync(OperationBreadcrumbsKeepStageSourceAndOneOutcome)),
         ("diagnostic redaction covers quoted secrets and device codes", Sync(DiagnosticRedactionCoversQuotedSecretsAndDeviceCodes)),
         ("foundation startup failures reach configured sinks", Sync(FoundationStartupFailuresReachConfiguredSinks)),
@@ -142,6 +147,7 @@ internal static partial class Program
         ("java probe parses modern property output", Sync(JavaProbeParsesModernPropertyOutput)),
         ("java probe parses the legacy version line", Sync(JavaProbeParsesLegacyVersionLine)),
         ("java probe rejects unrecognized output", Sync(JavaProbeRejectsUnrecognizedOutput)),
+        ("java expand root finds homes in vendor trees", Sync(ExpandRootFindsHomesInVendorTrees)),
         ("cross capability page has no state id collisions", CrossCapabilityPageHasNoStateIdCollisions),
         // XSR-513: online account flows.
         ("the microsoft device login runs the full chain", MicrosoftDeviceLoginRunsTheFullChain),

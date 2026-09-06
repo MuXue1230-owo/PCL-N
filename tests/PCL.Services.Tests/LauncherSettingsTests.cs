@@ -33,10 +33,12 @@ internal static partial class Program
     internal static ValueTask LauncherSchemaMatchesLegacyDefaults()
     {
         SettingsSchema schema = LauncherDefaults.CreateSchema();
-        AssertEqual(103, schema.Count);
+        // The 103 legacy defaults remain intact; XSR-716 adds one independent text document.
+        AssertEqual(104, schema.Count);
         AssertEqual(44, schema.Definitions.Count(definition => definition.ValueType == SettingValueType.Bool));
         AssertEqual(42, schema.Definitions.Count(definition => definition.ValueType == SettingValueType.I32));
-        AssertEqual(17, schema.Definitions.Count(definition => definition.ValueType == SettingValueType.Text));
+        AssertEqual(17, schema.Definitions.Count(definition => definition.ValueType == SettingValueType.Text
+            && definition.Key.Value != PCL.Services.Minecraft.MinecraftLibraryService.SettingKey));
 
         AssertTrue(schema.TryGetDefinition(XsrSemanticId.Parse("LaunchAdvanceJvm")) is { } jvm
             && jvm.DefaultValue.StartsWith("-XX:+UseG1GC -XX:-UseAdaptiveSizePolicy", StringComparison.Ordinal)
