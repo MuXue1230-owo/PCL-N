@@ -1,44 +1,92 @@
 name: Launcher Build
-
-# The CI channel must produce a usable launcher, not just green checks: every push builds the
-# desktop app per platform (NativeAOT, self-contained), embeds the providers' public OAuth client
-# ids at publish time, smoke-runs the binary headlessly, and uploads the artifacts.
-
 on:
   push:
-    branches:
-      - refactor/xsr
+    branches: [refactor/xsr]
+    tags: ['[0-9]*', 'v[0-9]*']
   workflow_dispatch:
-
 permissions:
   contents: read
-
+concurrency:
+  group: launcher-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      prefix: ${{ steps.version.outputs.prefix }}
+      channel: ${{ steps.version.outputs.channel }}
+      sequence: ${{ steps.version.outputs.sequence }}
+      commit: ${{ steps.version.outputs.commit }}
+      release: ${{ steps.version.outputs.release }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m unittest discover -s eng/release -p 'test_*.py'
+      - id: version
+        run: python eng/release/metadata.py --output release-metadata
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-metadata
+          path: release-metadata/*
   launcher:
-    name: Launcher ${{ matrix.runtime_id }}
+    needs: metadata
+    name: Launcher ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runtime_id: win-x64
-            os: windows-latest
-            archive: zip
-          - runtime_id: linux-x64
-            os: ubuntu-latest
-            archive: tar.gz
-
+          - {rid: win-x64, os: windows-2025}
+          - {rid: win-arm64, os: windows-11-arm}
+          - {rid: linux-x64, os: ubuntu-24.04}
+          - {rid: linux-arm64, os: ubuntu-24.04-arm}
+          - {rid: osx-x64, os: macos-15-intel}
+          - {rid: osx-arm64, os: macos-15}
+    env:
+      PRODUCT_VERSION: ${{ needs.metadata.outputs.version }}
+      VERSION_PREFIX: ${{ needs.metadata.outputs.prefix }}
+      VERSION_CHANNEL: ${{ needs.metadata.outputs.channel }}
+      VERSION_SEQUENCE: ${{ needs.metadata.outputs.sequence }}
+      COMMIT_SHORT: ${{ needs.metadata.outputs.commit }}
     steps:
-      - name: Check out source
-        uses: actions/checkout@v4
-
-      - name: Install .NET SDK
-        uses: actions/setup-dotnet@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
         with:
           global-json-file: global.json
-
-      - name: Resolve the OAuth client id secrets
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Linux packaging tools
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev libfontconfig1-dev libx11-dev libice6 libsm6 rpm ruby-dev build-essential desktop-file-utils squashfs-tools
+          sudo gem install fpm -v 1.16.0 --no-document
+          arch=x86_64
+          if [[ '${{ matrix.rid }}' == linux-arm64 ]]; then arch=aarch64; fi
+          curl --fail --location --retry 3 "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${arch}.AppImage" -o "$RUNNER_TEMP/appimagetool"
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "APPIMAGETOOL=$RUNNER_TEMP/appimagetool" >> "$GITHUB_ENV"
+      - name: Install Windows packaging tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          dotnet tool install --global wix --version 6.0.2
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (!(Test-Path 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe')) {
+            Invoke-WebRequest 'https://files.jrsoftware.org/is/6/innosetup-6.4.3.exe' -OutFile "$env:RUNNER_TEMP\innosetup.exe"
+            $install = Start-Process -FilePath "$env:RUNNER_TEMP\innosetup.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/SP-' -Wait -PassThru -WindowStyle Hidden
+            if ($install.ExitCode -ne 0) { exit $install.ExitCode }
+          }
+      - name: Resolve public OAuth client ids
         shell: bash
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
@@ -50,60 +98,69 @@ jobs:
           set -euo pipefail
           microsoft="${PCL_MS_CLIENT_ID:-${MS_CLIENT_ID:-${CLIENT_ID:-}}}"
           little_skin="${PCL_LITTLESKIN_CLIENT_ID:-${LITTLESKIN_CLIENT_ID:-}}"
-          if [[ -z "$microsoft" ]]; then
-            echo "::warning::No Microsoft client id secret (CLIENT_ID / MS_CLIENT_ID / PCL_MS_CLIENT_ID) — the launcher builds without the refresh capability."
-          else
-            echo "::add-mask::$microsoft"
-          fi
-          if [[ -z "$little_skin" ]]; then
-            echo "::warning::No LittleSkin client id secret (LITTLESKIN_CLIENT_ID / PCL_LITTLESKIN_CLIENT_ID) — the launcher builds without LittleSkin device login."
-          else
-            echo "::add-mask::$little_skin"
-          fi
+          if [[ -n "$microsoft" ]]; then echo "::add-mask::$microsoft"; fi
+          if [[ -n "$little_skin" ]]; then echo "::add-mask::$little_skin"; fi
           echo "PCL_MS_CLIENT_ID=$microsoft" >> "$GITHUB_ENV"
           echo "PCL_LITTLESKIN_CLIENT_ID=$little_skin" >> "$GITHUB_ENV"
-
-      - name: Publish the launcher
+      - name: Publish NativeAOT launcher
         shell: bash
         run: |
-          dotnet publish PCL.Desktop/PCL.Desktop.csproj \
-            --configuration Release \
-            -r ${{ matrix.runtime_id }} \
-            --self-contained true \
-            -m:1 \
-            -nodeReuse:false \
-            -p:PublishAot=true \
-            -p:StripSymbols=true \
-            -p:XsrVersionChannel=ci \
-            -p:PclMicrosoftClientId="$PCL_MS_CLIENT_ID" \
-            -p:PclLittleSkinClientId="$PCL_LITTLESKIN_CLIENT_ID" \
-            --output "${{ runner.temp }}/launcher"
-
-      - name: Smoke-run the published launcher
+          dotnet publish PCL.Desktop/PCL.Desktop.csproj --configuration Release \
+            -r '${{ matrix.rid }}' --self-contained true -m:1 -nodeReuse:false \
+            -p:PublishAot=true -p:StripSymbols=true \
+            -p:XsrVersionPrefix="$VERSION_PREFIX" -p:XsrVersionChannel="$VERSION_CHANNEL" \
+            -p:XsrVersionSequence="$VERSION_SEQUENCE" -p:XsrCommitShort="$COMMIT_SHORT" \
+            -p:PclMicrosoftClientId="$PCL_MS_CLIENT_ID" -p:PclLittleSkinClientId="$PCL_LITTLESKIN_CLIENT_ID" \
+            --output "$RUNNER_TEMP/launcher"
+      - name: Smoke-run published executable
         shell: bash
         run: |
-          binary="${{ runner.temp }}/launcher/PCL.Desktop"
-          if [[ "${{ matrix.runtime_id }}" == win-* ]]; then
-            binary="${binary}.exe"
-          fi
+          binary="$RUNNER_TEMP/launcher/PCL.Desktop"
+          if [[ '${{ matrix.rid }}' == win-* ]]; then binary="${binary}.exe"; fi
           "$binary" --validate-shell
-
-      - name: Archive the launcher
+      - name: Build native installers and portable archive
+        shell: bash
+        run: python eng/release/package.py --payload "$RUNNER_TEMP/launcher" --output artifacts --rid '${{ matrix.rid }}' --version "$PRODUCT_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PCL-Nexa-${{ matrix.rid }}
+          path: artifacts/*
+          if-no-files-found: error
+  distribution:
+    needs: [metadata, launcher]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    env:
+      PRODUCT_VERSION: ${{ needs.metadata.outputs.version }}
+      VERSION_CHANNEL: ${{ needs.metadata.outputs.channel }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: PCL-Nexa-*
+          path: artifacts
+          merge-multiple: true
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-metadata
+          path: release-metadata
+      - name: Require every package and calculate checksums
+        run: python3 eng/release/verify.py artifacts "$PRODUCT_VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PCL-Nexa-complete-distribution
+          path: |
+            artifacts/*
+            release-metadata/CHANGELOG.md
+      - name: Publish tagged release
+        if: needs.metadata.outputs.release == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
-          artifact_dir="${{ github.workspace }}/artifacts"
-          mkdir -p "$artifact_dir"
-          name="PCL-Nexa-${{ matrix.runtime_id }}"
-          if [[ "${{ matrix.archive }}" == zip ]]; then
-            powershell -NoProfile -Command "Compress-Archive -Path '${{ runner.temp }}/launcher/*' -DestinationPath '${artifact_dir}/${name}.zip' -Force"
-          else
-            tar -czf "${artifact_dir}/${name}.tar.gz" -C "${{ runner.temp }}/launcher" .
-          fi
-          ls -la "$artifact_dir"
-
-      - name: Upload the launcher artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: PCL-Nexa-${{ matrix.runtime_id }}
-          path: ${{ github.workspace }}/artifacts/*
-          if-no-files-found: error
+          set -euo pipefail
+          flags=()
+          if [[ "$VERSION_CHANNEL" != stable ]]; then flags+=(--prerelease --latest=false); fi
+          gh release create "$GITHUB_REF_NAME" artifacts/* --verify-tag \
+            --title "PCL Nexa $PRODUCT_VERSION" --notes-file release-metadata/CHANGELOG.md "${flags[@]}"
