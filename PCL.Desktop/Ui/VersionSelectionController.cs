@@ -214,6 +214,10 @@ internal sealed class VersionSelectionController : IDisposable
         Publish("add.visible", manualAdd); Publish("rename.visible", false);
         if (!_chooseDirectories) _shell.Tree.Attach(_dropdown, _entities["LibraryContent"]);
         _chooseDirectories = true; _revision = -1;
+        // The card matches the directory button's width: viewport width minus the chrome
+        // margins (28), the caption (76), and the add-folder button with spacings (136).
+        XsrUiElement card = _shell.Tree.GetComponent<XsrUiElement>(_entities["LibraryDropdownCard"])!;
+        card.Width = Math.Max(320, _shell.Renderer.Viewport.Width - 240);
         if (manualAdd) _shell.Renderer.Focus(_entities["LibraryDirectoryInput"], keyboard);
         else FocusDirectory();
     }

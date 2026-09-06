@@ -25,7 +25,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     private readonly XsrUiShell _shell;
     private readonly object _commitGate = new();
     private readonly Dictionary<XsrUiEntityId, AvaloniaUiSceneNodeControl> _controls = [];
-    private readonly ScrollIndicatorOverlay _scrollOverlay;
     private readonly List<AvaloniaUiSceneNodeControl> _outgoingControls = [];
     private readonly Dictionary<XsrUiEntityId, double> _capsuleTargets = [];
     private readonly Dictionary<XsrUiEntityId, double> _progressTargets = [];
@@ -50,8 +49,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
     public AvaloniaUiSceneSurface(XsrUiShell shell)
     {
         _shell = shell ?? throw new ArgumentNullException(nameof(shell));
-        _scrollOverlay = new ScrollIndicatorOverlay(this);
-        Children.Add(_scrollOverlay);
         UseLayoutRounding = false;
         Focusable = true;
         FocusAdorner = null;
@@ -218,10 +215,6 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             }
         }
 
-        // The indicator overlay fills the whole surface; without an explicit arrange its
-        // bounds stay zero and its render is clipped away entirely.
-        _scrollOverlay.Arrange(new Rect(finalSize));
-
         ArrangeOutgoingLayers();
         return finalSize;
     }
@@ -386,18 +379,9 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         ApplyOutgoingLayers(scene);
         if (_pointerInside) UpdatePointerCursor(_lastPointerPoint);
 
-        // The indicator overlay must stay the last child: scene reorders shift it otherwise,
-        // and node rows would cover the indicators again.
-        int overlayIndex = Children.IndexOf(_scrollOverlay);
-        if (overlayIndex != Children.Count - 1)
-        {
-            Children.Move(overlayIndex, Children.Count - 1);
-        }
-
         InvalidateMeasure();
         InvalidateArrange();
         InvalidateVisual();
-        _scrollOverlay.InvalidateVisual();
     }
 
     private void UpdatePointerCursor(XsrUiPoint point) =>
@@ -1254,6 +1238,10 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
         }
 
         DrawSelectionPill(context, style);
+        if (_node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
+        {
+            DrawScrollIndicator(context, rect, scroll);
+        }
 
         if (_node.IsFocusVisible)
         {
@@ -1503,27 +1491,4 @@ internal sealed partial class AvaloniaUiSceneNodeControl : Control
 /// last surface child, so node rows can never cover the indicators. Scene rects are used
 /// as-is — the overlay fills the surface and shares its coordinate space.
 /// </summary>
-internal sealed class ScrollIndicatorOverlay(AvaloniaUiSceneSurface owner) : Control
-{
-    public override void Render(DrawingContext context)
-    {
-        base.Render(context);
-        if (owner._scene is null)
-        {
-            return;
-        }
 
-        for (int index = 0; index < owner._scene.Count; index++)
-        {
-            XsrUiSceneNode node = owner._scene[index];
-            if (node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll
-                && node.Rect.Width > 0 && node.Rect.Height > 0)
-            {
-                AvaloniaUiSceneNodeControl.DrawScrollIndicator(
-                    context,
-                    new Rect(node.Rect.X, node.Rect.Y, node.Rect.Width, node.Rect.Height),
-                    scroll);
-            }
-        }
-    }
-}

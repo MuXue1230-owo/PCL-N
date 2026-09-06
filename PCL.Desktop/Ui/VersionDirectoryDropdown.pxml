@@ -1,6 +1,6 @@
 <ContentHost xmlns="https://pcln.dev/pxml/2026" Key="LibraryDropdownLayer">
   <Button Key="LibraryDropdownDismiss" Label="关闭目录下拉框" Command="ui.versions.dismiss" />
-  <StackPanel Key="LibraryDropdownCard" Orientation="Vertical" Width="420" Margin="0,46,0,0" HorizontalAlignment="Center" VerticalAlignment="Start" Padding="8" Spacing="8">
+  <StackPanel Key="LibraryDropdownCard" Orientation="Vertical" Margin="84,46,0,0" VerticalAlignment="Start" Padding="8" Spacing="8">
     <StackPanel Key="LibraryDirectoryRows" Orientation="Vertical" Spacing="4" Scroll="true" Weight="1" />
     <StackPanel Key="LibraryNameEditor" Orientation="Horizontal" Height="36" Spacing="6" IsVisible="{state versions.rename.visible}">
       <TextInput Key="LibraryNameInput" Label="文件夹名称，留空则显示完整路径" Placeholder="文件夹名称" Weight="1" />
