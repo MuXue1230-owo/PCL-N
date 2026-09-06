@@ -8,6 +8,22 @@ from pathlib import Path
 
 TAG = re.compile(r"v?((0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*))(?:\.(alpha|beta)\.([1-9]\d*)|\.ci\.([0-9a-f]{6}))?$")
 
+# Asset purposes for the release page; keys mirror eng/release/verify.py FORMATS so the
+# guide can never drift from the verified package set.
+ASSET_GUIDE = {
+    ("win", "setup.exe"): "Windows 安装包（Inno Setup 向导，可选创建桌面快捷方式）",
+    ("win", "msi"): "Windows MSI 安装包（适合系统级部署）",
+    ("win", "portable.zip"): "Windows 便携版（解压即用，免安装）",
+    ("linux", "deb"): "Linux DEB 安装包（Debian / Ubuntu）",
+    ("linux", "rpm"): "Linux RPM 安装包（Fedora / openSUSE）",
+    ("linux", "AppImage"): "Linux AppImage（免安装单文件）",
+    ("linux", "portable.tar.gz"): "Linux 便携版（解压即用）",
+    ("osx", "dmg"): "macOS 映像（打开后拖入 Applications）",
+    ("osx", "portable.tar.gz"): "macOS 便携版（解压即用）",
+}
+PLATFORM_NAMES = {"win": "Windows", "linux": "Linux", "osx": "macOS"}
+CHANNEL_NAMES = {"stable": "正式版", "alpha": "Alpha 预览版", "beta": "Beta 预览版", "ci": "CI 构建版"}
+
 
 def identity(ref, sha):
     if not re.fullmatch(r"[0-9a-f]{40,64}", sha):
@@ -29,6 +45,58 @@ def git(*args):
     return subprocess.check_output(["git", *args], encoding="utf-8").strip()
 
 
+def changelog(version, previous, sha):
+    # With a previous tag the range is previous..sha; for the FIRST version only the tagged
+    # commit itself is described — a bare `git log <sha>` would sweep in the entire history
+    # of the repository, which is not this release's content.
+    revision = [f"{previous}..{sha}"] if previous else ["-1", sha]
+    messages = git("log", "--format=%h%x09%B%x00", *revision).split("\0")
+    entries = []
+    for message in messages:
+        if not message.strip():
+            continue
+        commit, body = message.strip().split("\t", 1)
+        lines = body.strip().splitlines()
+        entries.append((commit, lines))
+    if not entries:
+        return f"# 更新内容\n\n- 首个公开发布版本。\n"
+    notes = "# 更新内容\n\n"
+    for commit, lines in entries:
+        notes += f"- {lines[0]} (`{commit}`)\n"
+        if len(lines) > 1:
+            notes += "\n".join("  " + line for line in lines[1:]) + "\n"
+    return notes
+
+
+def downloads_section(version):
+    """One bullet per released package, grouped by platform, mirroring verify.py's set."""
+    lines = ["## 下载", "",
+             "每个平台选择**一个**包即可；`portable` 为免安装便携版。",
+             "所有文件的 SHA256 校验值见附件 `SHA256SUMS`。", ""]
+    for platform in ("win", "linux", "osx"):
+        lines += [f"### {PLATFORM_NAMES[platform]}", ""]
+        for arch in ("x64", "arm64"):
+            for extension in ("setup.exe", "msi", "portable.zip") if platform == "win" else \
+                             ("deb", "rpm", "AppImage", "portable.tar.gz") if platform == "linux" else \
+                             ("dmg", "portable.tar.gz"):
+                name = f"PCL-Nexa-{version}-{platform}-{arch}.{extension}"
+                purpose = ASSET_GUIDE.get((platform, extension), extension)
+                lines.append(f"- `{name}` — {purpose}")
+        lines.append("")
+    lines.append("SHA256SUMS 列出全部文件的哈希，导入或 `sha256sum -c` 即可校验完整性。")
+    return lines
+
+
+def release_body(data, changelog_text, previous):
+    version = data["version"]
+    channel_label = CHANNEL_NAMES.get(data["channel"], data["channel"])
+    lines = [f"# PCL Nexa {version} {channel_label}", "", *downloads_section(version),
+             "## 更新内容", "", changelog_text.rstrip(), ""]
+    if previous:
+        lines += [f"**完整变更**：`{previous}` → `{version}`", ""]
+    return "\n".join(lines)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--ref", default=os.environ.get("GITHUB_REF", ""))
@@ -37,22 +105,19 @@ def main():
     args = parser.parse_args()
     sha = git("rev-parse", f"{args.sha}^{{commit}}")
     data = identity(args.ref, sha)
+    # Only tags in this product's own version line (same dotted prefix, e.g. 2.0.0.*) can be
+    # a previous release; the repository also carries legacy tags from other product lines
+    # (e.g. 2.10.x) that must never scope this product's changelog.
+    prefix = data["prefix"]
     previous = next((tag for tag in git("tag", "--merged", sha, "--sort=-creatordate").splitlines()
-                     if TAG.fullmatch(tag) and git("rev-parse", f"{tag}^{{commit}}") != sha), None)
-    revision = f"{previous}..{sha}" if previous else sha
-    messages = git("log", "--format=%h%x09%B%x00", revision).split("\0")
-    notes = f"# PCL Nexa {data['version']}\n\n"
-    for message in messages:
-        if not message.strip():
-            continue
-        commit, body = message.strip().split("\t", 1)
-        lines = body.strip().splitlines()
-        notes += f"- {lines[0]} (`{commit}`)\n"
-        if len(lines) > 1:
-            notes += "\n" + "\n".join("  " + line for line in lines[1:]) + "\n"
+                     if (bare := tag.removeprefix("v")) != prefix and bare.startswith(prefix + ".")
+                     and TAG.fullmatch(tag) and git("rev-parse", f"{tag}^{{commit}}") != sha), None)
+    changelog_text = changelog(data["version"], previous, sha)
+    body = release_body(data, changelog_text, previous)
     args.output.mkdir(parents=True, exist_ok=True)
     (args.output / "metadata.json").write_text(json.dumps(data, indent=2), encoding="utf-8")
-    (args.output / "CHANGELOG.md").write_text(notes, encoding="utf-8")
+    (args.output / "CHANGELOG.md").write_text(changelog_text, encoding="utf-8")
+    (args.output / "RELEASE.md").write_text(body, encoding="utf-8")
     if output := os.environ.get("GITHUB_OUTPUT"):
         with open(output, "a", encoding="utf-8") as stream:
             for key, value in data.items():

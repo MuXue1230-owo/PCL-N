@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from metadata import identity
+from metadata import changelog, identity, release_body
 from verify import expected_names, verify
 
 
@@ -57,6 +57,61 @@ class ReleaseTests(unittest.TestCase):
             self.assertIn("Details with `backticks` and 中文", notes)
             self.assertNotIn("old entry", notes)
             self.assertFalse((root / "SHOULD_NOT_EXIST").exists())
+
+
+    def test_first_version_changelog_covers_only_the_tagged_commit(self):
+        # A bare `git log <sha>` sweeps the entire repository history into the first
+        # release; the notes must describe only the tagged commit itself.
+        with tempfile.TemporaryDirectory() as work:
+            def run(*args, **kwargs):
+                return subprocess.check_output(["git", "-C", work, *args], encoding="utf-8").strip()
+            run("init", "-q")
+            run("config", "user.email", "test@example.com")
+            run("config", "user.name", "Test")
+            seed = "seed"
+            (Path(work) / "seed.txt").write_text("seed", encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", seed)
+            run("add", ".")
+            (Path(work) / "release.txt").write_text("release", encoding="utf-8")
+            run("add", ".")
+            run("commit", "-m", "feat: the actual release content")
+            # A legacy tag from another product line sharing the repo must not scope this release.
+            run("tag", "2.10.5", "HEAD~1")
+            run("tag", "v2.0.0.alpha.1")
+            sha = run("rev-parse", "HEAD")
+
+            from metadata import changelog
+            import metadata
+            # changelog() shells out to git in the process CWD; point it at the temp repo.
+            original_git = metadata.git
+            metadata.git = lambda *args: subprocess.check_output(["git", "-C", work, *args], encoding="utf-8").strip()
+            try:
+                notes = changelog("2.0.0.alpha.1", None, sha)
+            finally:
+                metadata.git = original_git
+            self.assertIn("the actual release content", notes)
+            self.assertNotIn(seed, notes)
+
+            # Mirror metadata.py's previous lookup: only 2.0.0.* tags qualify, and the
+            # tagged commit itself is excluded; 2.10.5 must not become `previous`.
+            self.assertIsNone(next(
+                (tag for tag in run("tag", "--merged", sha).splitlines()
+                 if (bare := tag.removeprefix("v")) != "2.0.0" and bare.startswith("2.0.0.")
+                 and run("rev-parse", f"{tag}^{{commit}}") != sha),
+                None))
+
+    def test_release_body_lists_every_package_with_purpose(self):
+        from metadata import release_body
+        body = release_body({"version": "2.0.0.alpha.1", "channel": "alpha"}, "# 更新内容\n\n- fix", "v2.0.0.alpha.0")
+        self.assertIn("setup.exe", body)
+        self.assertIn("portable.zip", body)
+        self.assertIn("AppImage", body)
+        self.assertIn("dmg", body)
+        self.assertIn("SHA256SUMS", body)
+        self.assertIn("更新内容", body)
+
+
 
 
 if __name__ == "__main__":
