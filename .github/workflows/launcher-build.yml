@@ -164,7 +164,7 @@ jobs:
           if [[ "$VERSION_CHANNEL" != stable ]]; then flags+=(--prerelease --latest=false); fi
           # Re-runs on an existing tag update the description and re-attach assets instead of
           # failing; the notes carry the download guide plus the changelog.
-          if gh release view "$GITHUB_REF_NAME" --json id --jq id >/dev/null 2>&1; then
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
             gh release edit "$GITHUB_REF_NAME" --title "PCL Nexa $PRODUCT_VERSION" \
               --notes-file release-metadata/RELEASE.md "${flags[@]}"
             gh release upload "$GITHUB_REF_NAME" artifacts/* --clobber
