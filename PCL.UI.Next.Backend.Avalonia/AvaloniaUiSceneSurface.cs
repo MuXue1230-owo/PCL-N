@@ -33,6 +33,7 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
 
     /// <summary>The scene currently committed to this surface, for window-level overlays.</summary>
     internal XsrUiScene? DebugScene => _scene;
+
     private XsrUiEntityId _lastPageRoot;
     private XsrSemanticId _lastNavigation;
     private readonly Dictionary<XsrUiEntityId, string> _transitionKeys = [];

@@ -119,7 +119,7 @@ public sealed class AvaloniaUiShellWindow : Window
         // ApplyScene owns the surface's Children order), repainting on every scene commit.
         Grid chrome = new();
         chrome.Children.Add(_surface);
-        _scrollOverlay = new ScrollIndicatorOverlay(() => _surface.DebugScene)
+        _scrollOverlay = new ScrollIndicatorOverlay(_surface, () => _surface.DebugScene)
         {
             IsHitTestVisible = false,
         };
@@ -579,7 +579,8 @@ public sealed class AvaloniaUiShellWindow : Window
 /// Paints the scroll indicators of every scene node above the whole window content:
 /// a node's own children paint after the node, so per-node draws are always covered.
 /// </summary>
-internal sealed class ScrollIndicatorOverlay(Func<XsrUiScene?> sceneProvider) : Control
+internal sealed class ScrollIndicatorOverlay(
+    AvaloniaUiSceneSurface surface, Func<XsrUiScene?> sceneProvider) : Control
 {
     public override void Render(DrawingContext context)
     {
@@ -590,14 +591,26 @@ internal sealed class ScrollIndicatorOverlay(Func<XsrUiScene?> sceneProvider) : 
             return;
         }
 
+        // Scene rects live in the surface's coordinate space; this overlay is a sibling
+        // control, so every rect must be mapped through the surface-to-overlay transform
+        // before drawing — raw scene coordinates misplace the indicator.
+        Matrix? surfaceToOverlay = surface.TransformToVisual(this);
+        if (surfaceToOverlay is not { } transform)
+        {
+            return;
+        }
+
         for (int index = 0; index < scene.Count; index++)
         {
             XsrUiSceneNode node = scene[index];
             if (node.Scroll is { ShowsVerticalIndicator: true, CanScrollVertically: true } scroll)
             {
+                // Manual matrix application: no dependency on point/size transform APIs.
+                double x = (transform.M11 * node.Rect.X) + (transform.M21 * node.Rect.Y) + transform.M31;
+                double y = (transform.M12 * node.Rect.X) + (transform.M22 * node.Rect.Y) + transform.M32;
                 AvaloniaUiSceneNodeControl.DrawScrollIndicator(
                     context,
-                    new Rect(node.Rect.X, node.Rect.Y, node.Rect.Width, node.Rect.Height),
+                    new Rect(x, y, node.Rect.Width, node.Rect.Height),
                     scroll);
             }
         }
