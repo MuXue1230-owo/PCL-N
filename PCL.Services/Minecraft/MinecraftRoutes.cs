@@ -130,7 +130,7 @@ public static class MinecraftQueries
         {
             ArgumentNullException.ThrowIfNull(query);
             ArgumentNullException.ThrowIfNull(discovery);
-            try { return ValueTask.FromResult(XsrResult.Success<IReadOnlyList<MinecraftVersionDescriptor>>(discovery.Discover(query.MinecraftRootDirectory))); }
+            try { return ValueTask.FromResult(XsrResult.Success<IReadOnlyList<MinecraftVersionDescriptor>>(discovery.Discover(query.MinecraftRootDirectory, CancellationToken.None))); }
             catch (Exception exception) when (exception is ArgumentException or IOException or UnauthorizedAccessException)
             { return ValueTask.FromResult(XsrResult.Failure<IReadOnlyList<MinecraftVersionDescriptor>>(MinecraftErrors.InvalidRequest(exception.Message))); }
         };

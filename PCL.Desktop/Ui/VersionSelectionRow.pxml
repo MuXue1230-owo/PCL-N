@@ -1,4 +1,4 @@
-<Button xmlns="https://pcln.dev/pxml/2026" Key="LibraryRow" Command="ui.versions.select" Height="72" Margin="0,0,26,0">
+<Button xmlns="https://pcln.dev/pxml/2026" Key="LibraryRow" Command="ui.versions.select" Height="72">
   <StackPanel Orientation="Horizontal" Spacing="12" Margin="16,12,16,12">
     <Image Key="LibraryRowIcon" Source="lucide/blocks" Width="28" Height="28" VerticalAlignment="Center" />
     <StackPanel Orientation="Vertical" Weight="1" VerticalAlignment="Center">

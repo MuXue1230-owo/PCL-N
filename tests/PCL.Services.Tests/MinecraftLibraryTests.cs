@@ -92,11 +92,11 @@ internal static partial class Program
         source.Requests[0].SetResult([LibraryDescriptor(a, "stale")]);
         AssertFalse((await first).IsSuccess);
         AssertEqual(b, fixture.Snapshot.RootDirectory); AssertEqual("chosen", fixture.Snapshot.SelectedInstanceId);
+        // A loading scan publishes an empty instance list, so selection waits for it.
         Task<XsrResult> refresh = service.RefreshAsync();
-        AssertTrue(service.SelectInstance(b, "same").IsSuccess);
         source.Requests[2].SetResult([LibraryDescriptor(b, "chosen"), LibraryDescriptor(b, "same")]);
-        await refresh;
-        AssertEqual("same", fixture.Snapshot.SelectedInstanceId);
+        AssertTrue((await refresh).IsSuccess);
+        AssertTrue(service.SelectInstance(b, "same").IsSuccess);
         using CancellationTokenSource cancellation = new();
         Task<XsrResult> cancelled = service.RefreshAsync(cancellation.Token);
         cancellation.Cancel(); source.Requests[3].SetCanceled(cancellation.Token);

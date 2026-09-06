@@ -491,6 +491,15 @@ public sealed partial class XsrUiRenderer
         double scrollY = scroll?.OffsetY ?? 0;
         double cursor = (stack.Direction == XsrUiOrientation.Vertical ? contentY : contentX) - (stack.Direction == XsrUiOrientation.Vertical ? scrollY : scrollX);
         double crossAvailable = stack.Direction == XsrUiOrientation.Vertical ? contentWidth : contentHeight;
+
+        // Scroll containers reserve a fixed gutter at their right edge for the indicator:
+        // children lay out inside the reduced cross size so no child background can cover it.
+        if (scroll is not null && scroll.ShowsVerticalIndicator)
+        {
+            const double indicatorGutter = 12;
+            if (stack.Direction == XsrUiOrientation.Vertical) contentWidth = Math.Max(0, contentWidth - indicatorGutter);
+            else crossAvailable = Math.Max(0, crossAvailable - indicatorGutter);
+        }
         double crossOrigin = stack.Direction == XsrUiOrientation.Vertical ? contentX : contentY;
         double crossScroll = stack.Direction == XsrUiOrientation.Vertical ? scrollX : scrollY;
         XsrUiEntityId[] visibleChildren = [.. _tree.Children(entity)

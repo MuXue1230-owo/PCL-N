@@ -37,7 +37,7 @@ public sealed class MinecraftInstanceDiscovery(
         {
             operation?.Stage("discover_versions");
             IReadOnlyList<MinecraftVersionDescriptor> versions = await Task.Run(
-                () => _versionDiscovery.Discover(minecraftRootDirectory), cancellationToken).ConfigureAwait(false);
+                () => _versionDiscovery.Discover(minecraftRootDirectory, cancellationToken), cancellationToken).ConfigureAwait(false);
             _log?.Write(LogLevel.RealTime, LogModuleName,
                 $"Version directories discovered root={minecraftRootDirectory} count={versions.Count}");
             operation?.Stage("read_instance_metadata", $"count={versions.Count}");

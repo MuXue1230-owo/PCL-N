@@ -84,11 +84,7 @@ public sealed class MinecraftLibraryService : IDisposable
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _scanCancellation?.Cancel(); _scanCancellation?.Dispose();
-            _scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            long generation = ++_generation;
-            Publish(_snapshot with { IsLoading = true, Error = null });
-            return ScanAsync(_document.ActiveDirectory, generation, _scanCancellation.Token);
+            return BeginScanLocked(_document.ActiveDirectory, cancellationToken);
         }
     }
 
@@ -97,6 +93,7 @@ public sealed class MinecraftLibraryService : IDisposable
         string root;
         try { root = NormalizeDirectory(path); }
         catch (ArgumentException exception) { return XsrResult.Failure(MinecraftErrors.InvalidRequest(exception.Message)); }
+        Task<XsrResult> scan;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -108,11 +105,12 @@ public sealed class MinecraftLibraryService : IDisposable
             root = existing?.Path ?? root;
             XsrResult saved = Save(_document with { ActiveDirectory = root, Directories = directories });
             if (!saved.IsSuccess) return saved;
-            Publish(new(_snapshot.Revision, Array.AsReadOnly(directories), root, [], "", true));
+            // Commit and scan replacement share this critical section: a scan completing for
+            // the old root must see the bumped generation BEFORE it can publish again, or it
+            // would resurrect the old root and persist its selection into the new one.
+            scan = BeginScanLocked(root, cancellationToken);
         }
-        // RefreshAsync performs the single scan invalidation; invalidating here as well used
-        // to churn two generations and one extra loading publication for the same change.
-        return await RefreshAsync(cancellationToken).ConfigureAwait(false);
+        return await scan.ConfigureAwait(false);
     }
 
     public async Task<XsrResult> ForgetDirectoryAsync(string path, CancellationToken cancellationToken = default)
@@ -123,6 +121,7 @@ public sealed class MinecraftLibraryService : IDisposable
         try { normalized = NormalizeDirectory(path); }
         catch (ArgumentException exception) { return XsrResult.Failure(MinecraftErrors.InvalidRequest(exception.Message)); }
         bool refresh;
+        Task<XsrResult>? scanTask = null;
         lock (_gate)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -134,17 +133,37 @@ public sealed class MinecraftLibraryService : IDisposable
             string root = refresh ? remaining[0].Path : _document.ActiveDirectory;
             XsrResult saved = Save(_document with { Directories = remaining, ActiveDirectory = root });
             if (!saved.IsSuccess) return saved;
-            if (refresh) InvalidateScan();
-            Publish(_snapshot with
+            if (refresh)
             {
-                Directories = Array.AsReadOnly(remaining),
-                RootDirectory = root,
-                Instances = refresh ? [] : _snapshot.Instances,
-                SelectedInstanceId = refresh ? "" : _snapshot.SelectedInstanceId,
-                IsLoading = refresh
-            });
+                Publish(_snapshot with
+                {
+                    Directories = Array.AsReadOnly(remaining),
+                    RootDirectory = root,
+                    Instances = [],
+                    SelectedInstanceId = "",
+                    IsLoading = true
+                });
+                scanTask = BeginScanLocked(root, cancellationToken);
+            }
+            else
+            {
+                Publish(_snapshot with
+                {
+                    Directories = Array.AsReadOnly(remaining),
+                    RootDirectory = root,
+                    Instances = _snapshot.Instances,
+                    SelectedInstanceId = _snapshot.SelectedInstanceId,
+                    IsLoading = false
+                });
+            }
         }
-        return refresh ? await RefreshAsync(cancellationToken).ConfigureAwait(false) : XsrResult.Success();
+
+        if (scanTask is not null)
+        {
+            return await scanTask.ConfigureAwait(false);
+        }
+
+        return XsrResult.Success();
     }
 
     public XsrResult SelectInstance(string root, string instanceId)
@@ -154,7 +173,7 @@ public sealed class MinecraftLibraryService : IDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             if (!PathComparer.Equals(root, _document.ActiveDirectory) || !_snapshot.Instances.Any(instance => instance.Id == instanceId))
                 return XsrResult.Failure(MinecraftErrors.InstanceNotFound(instanceId));
-            XsrResult saved = Remember(instanceId);
+            XsrResult saved = Remember(_document.ActiveDirectory, instanceId);
             if (saved.IsSuccess) Publish(_snapshot with { SelectedInstanceId = instanceId, Directories = Array.AsReadOnly(_document.Directories), Error = null });
             return saved;
         }
@@ -175,6 +194,32 @@ public sealed class MinecraftLibraryService : IDisposable
             if (saved.IsSuccess) Publish(_snapshot with { Directories = Array.AsReadOnly(_document.Directories) });
             return saved;
         }
+    }
+
+    /// <summary>
+    /// Replaces the in-flight scan with one for <paramref name="root"/>. MUST be called while
+    /// holding <see cref="_gate"/>: cancelling the old scan, bumping the generation, publishing
+    /// the loading truth, and creating the new scan are one atomic step, so a completing old
+    /// scan can never slip between the commit and the invalidation.
+    /// </summary>
+    private Task<XsrResult> BeginScanLocked(string root, CancellationToken cancellationToken)
+    {
+        _scanCancellation?.Cancel(); _scanCancellation?.Dispose();
+        _scanCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        long generation = ++_generation;
+        // A re-scan of the SAME root keeps the live selection visible while loading; a switch
+        // to a new root clears it (the old root's selection does not apply there).
+        string remembered = PathComparer.Equals(root, _snapshot.RootDirectory)
+            ? _snapshot.SelectedInstanceId
+            : "";
+        Publish(new(
+            _snapshot.Revision,
+            Array.AsReadOnly(_document.Directories),
+            root,
+            [],
+            remembered,
+            true));
+        return ScanAsync(root, generation, _scanCancellation.Token);
     }
 
     private async Task<XsrResult> ScanAsync(string root, long generation, CancellationToken cancellationToken)
@@ -202,11 +247,13 @@ public sealed class MinecraftLibraryService : IDisposable
                 Publish(_snapshot with { IsLoading = false });
                 return XsrResult.Failure(XsrRuntimeErrors.Cancelled());
             }
+            // Keyed to the SCANNED root: the active directory may have switched while this
+            // scan ran, and persisting against ActiveDirectory would cross-pollute.
             string remembered = _document.Directories.First(item => PathComparer.Equals(item.Path, root)).SelectedInstanceId;
             string selected = instances.Any(instance => instance.Id == remembered) ? remembered : instances.Count > 0 ? instances[0].Id : "";
             if (error is null && selected.Length > 0 && selected != remembered)
             {
-                XsrResult saved = Remember(selected);
+                XsrResult saved = Remember(root, selected);
                 if (!saved.IsSuccess) { error = saved.Error; selected = ""; }
             }
             if (error is not null) selected = "";
@@ -215,8 +262,8 @@ public sealed class MinecraftLibraryService : IDisposable
         }
     }
 
-    private XsrResult Remember(string id) => Save(_document with
-    { Directories = [.. _document.Directories.Select(item => PathComparer.Equals(item.Path, _document.ActiveDirectory) ? item with { SelectedInstanceId = id } : item)] });
+    private XsrResult Remember(string root, string id) => Save(_document with
+    { Directories = [.. _document.Directories.Select(item => PathComparer.Equals(item.Path, root) ? item with { SelectedInstanceId = id } : item)] });
     private XsrResult Save(MinecraftLibraryDocument document)
     {
         if (_configurationError is not null) return XsrResult.Failure(_configurationError);

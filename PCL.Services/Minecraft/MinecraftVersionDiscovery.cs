@@ -152,7 +152,12 @@ public sealed class MinecraftVersionDiscovery(PCL.Services.Logging.LogService? l
 {
     private readonly string _versionsDirectoryName = "versions";
 
-    public IReadOnlyList<MinecraftVersionDescriptor> Discover(string minecraftRootDirectory)
+    public IReadOnlyList<MinecraftVersionDescriptor> Discover(string minecraftRootDirectory) =>
+        Discover(minecraftRootDirectory, CancellationToken.None);
+
+    /// <summary>Accepts a cancellation token so a superseded scan stops its disk I/O early.</summary>
+    public IReadOnlyList<MinecraftVersionDescriptor> Discover(
+        string minecraftRootDirectory, CancellationToken cancellationToken)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(minecraftRootDirectory);
         string root = Path.GetFullPath(minecraftRootDirectory);
@@ -173,6 +178,7 @@ public sealed class MinecraftVersionDiscovery(PCL.Services.Logging.LogService? l
         }
         foreach (string directory in directories)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             string? jsonPath = MinecraftVersionPaths.FindPrimaryJson(directory);
             if (jsonPath is null || !MinecraftVersionPaths.TryReadDescriptor(jsonPath, out string? jsonId, out JsonElement json))
             {
