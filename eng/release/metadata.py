@@ -90,8 +90,11 @@ def downloads_section(version):
 def release_body(data, changelog_text, previous):
     version = data["version"]
     channel_label = CHANNEL_NAMES.get(data["channel"], data["channel"])
+    # changelog() carries its own "# 更新内容" H1 for standalone use; the release body
+    # already supplies the section header, so drop it here to avoid a doubled heading.
+    changelog_bullets = re.sub(r"^# 更新内容\s*", "", changelog_text)
     lines = [f"# PCL Nexa {version} {channel_label}", "", *downloads_section(version),
-             "## 更新内容", "", changelog_text.rstrip(), ""]
+             "## 更新内容", "", changelog_bullets.rstrip(), ""]
     if previous:
         lines += [f"**完整变更**：`{previous}` → `{version}`", ""]
     return "\n".join(lines)
