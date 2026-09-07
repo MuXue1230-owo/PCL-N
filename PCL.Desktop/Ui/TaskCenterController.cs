@@ -54,7 +54,6 @@ internal sealed class TaskCenterController : IDisposable
     private bool _disposed;
 
     private sealed class PresentedCard(
-        TaskCenterEntry value,
         XsrUiEntityId root,
         XsrUiEntityId icon,
         XsrUiEntityId title,
@@ -68,7 +67,7 @@ internal sealed class TaskCenterController : IDisposable
         XsrUiEntityId steps,
         List<XsrUiEntityId> stepRows)
     {
-        public TaskCenterEntry Value { get; set; } = value;
+        public TaskCenterEntry? Value { get; set; }
         public XsrUiEntityId Root { get; } = root;
         public XsrUiEntityId Icon { get; } = icon;
         public XsrUiEntityId Title { get; } = title;
@@ -166,11 +165,11 @@ internal sealed class TaskCenterController : IDisposable
             {
                 if (e.Intent.Command == CardCancelCommand)
                 {
-                    Dispatch(TaskCenterRoutes.Cancel, new TaskCenterCancelCommand(card.Value.TaskId));
+                    Dispatch(TaskCenterRoutes.Cancel, new TaskCenterCancelCommand(card.Value!.TaskId));
                 }
                 else
                 {
-                    Dispatch(TaskCenterRoutes.Dismiss, new TaskCenterDismissCommand(card.Value.TaskId));
+                    Dispatch(TaskCenterRoutes.Dismiss, new TaskCenterDismissCommand(card.Value!.TaskId));
                 }
 
                 return;
@@ -391,7 +390,6 @@ internal sealed class TaskCenterController : IDisposable
         Style(entities["TaskCardAction"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, XsrUiCornerRadii.Pill(30), hover: HoverTint);
 
         return new PresentedCard(
-            entry,
             root,
             entities["TaskCardIcon"],
             entities["TaskCardTitle"],
@@ -408,6 +406,14 @@ internal sealed class TaskCenterController : IDisposable
 
     private void UpdateCard(PresentedCard card, TaskCenterEntry entry)
     {
+        // SetComponent dirties the entity as Structure unconditionally, so restyling per
+        // frame spins the render loop while the page is staged (the install-start freeze).
+        // Entries are records: an unchanged entry skips the whole restyle.
+        if (card.Value == entry)
+        {
+            return;
+        }
+
         card.Value = entry;
         XsrUiColor accent = entry.State switch
         {

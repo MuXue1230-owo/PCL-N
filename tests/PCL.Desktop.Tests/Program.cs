@@ -91,6 +91,7 @@ internal static partial class Program
         ("delete actions persist only the requested profile and reject stale rows", DeleteActionsPersistAndRejectStaleRows),
         ("trivia rotates every three seconds without foreign tree writes and stops on disposal", TriviaTimerPublishesOnlyStateAndStops),
         ("install failure leaves the idle tree clean", InstallFailureLeavesTheIdleTreeClean),
+        ("staged task page renders clean between changes", StagedTaskPageRendersCleanBetweenChanges),
         ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
         ("task bubble fills up from the bottom edge with aggregated progress", TaskBubbleFillsUpFromTheBottomEdge),
         ("task center page reconciles cards and routes cancel dismiss and clear", TaskCenterPageReconcilesCardsAndRoutesActions),
@@ -568,6 +569,35 @@ internal static partial class Program
         public Task<System.Text.Json.Nodes.JsonObject> FetchAssetIndexJsonAsync(
             string indexUrl, CancellationToken cancellationToken) =>
             throw new InvalidOperationException("simulated metadata outage");
+    }
+
+    private static void StagedTaskPageRendersCleanBetweenChanges()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        using TaskCenterRuntime taskCenter = TaskCenterRuntimeComposer.Compose(fixture.Foundation.Host);
+        using TaskCenterController controller = new(
+            fixture.Shell, fixture.Intents, taskCenter.Commands, fixture.Store, bubble);
+        TaskCenterService tasks = fixture.Foundation.Host.Tasks;
+        using ITaskCenterTask install = tasks.Begin(new TaskCenterStart(
+            "install:1", "安装 Minecraft 1.20.1", ["版本信息", "游戏文件"]));
+        install.Report("游戏文件", "下载中", 0.4, 2, 5, 100);
+        Emit(fixture.Intents, "ui.tasks.open");
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(controller.IsStaged);
+
+        // The staged page must not restyle its cards every frame: with no entry change the
+        // second render returns the cached scene. Per-frame SetComponent calls dirty the
+        // entity as Structure and spin the render loop (the install-start freeze class).
+        XsrUiScene first = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        XsrUiScene second = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(ReferenceEquals(first, second));
+
+        // A real entry change still updates the card.
+        install.Report("游戏文件", "下载中", 0.8, 4, 5, 100);
+        XsrUiScene updated = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertFalse(ReferenceEquals(second, updated));
     }
 
     private static void InstallFailureLeavesTheIdleTreeClean()
