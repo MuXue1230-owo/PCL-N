@@ -1,0 +1,40 @@
+# XSR-723 Task center, bottom-right bubble, and the task page
+
+The legacy task manager returns as three coordinated pieces on the shared host store:
+
+- **`PCL.Services.Tasks.TaskCenterService`** — a foundation service (one writer of its cells)
+  that tracks user-visible background tasks. Entries are the legacy task-manager cards
+  (title, stage, detail, progress, file counts, speed, state, cancel-ability, step plan);
+  terminal entries stay visible until dismissed, abandoned handles surface as failed, and a
+  retention cap (30) bounds terminal history. The summary cell aggregates active count,
+  visible count, average progress, summed speed, and remaining files.
+- **Stage monotonicity** is preserved from the legacy `TaskManagerStagePlanner`: progress
+  never rewinds when a later phase reuses a generic stage name such as 下载文件, keyword
+  resolution maps unknown stage names onto the plan, and 已完成/就绪 mark completion.
+- **Routes** — `tasks.center.cancel`, `tasks.center.dismiss`, `tasks.center.clear` are typed
+  XSR commands; cancel routes to the owning task's token (the service owns the CTS), dismiss
+  only accepts terminal entries.
+
+The bottom-right bubble is the legacy extra-dock task bubble: a persistent shell-level
+overlay (round 44px capsule at the dock inset) whose translucent fill **rises from the
+bottom edge** with aggregated progress. UI.Next adds `XsrUiProgressFillAnchor.Bottom` for the
+rising fill and `XsrUiProgress.SetTarget` so runtime-built entities drive presentation-only
+targets (the backend catch-up animation still applies). The bubble is hidden while the task
+page is staged, filled at 100% once every task is done (completion is acknowledged, not timed
+out), reconciles at `FramePreparing` from the summary cell, and workers only publish a wake
+cell — no tree mutation off the render thread.
+
+The task center page is a pushed shell subpage (the shared back affordance pops it):
+a header with the aggregate and a bulk clear-finished action, one card per entry
+(state icon, stage copy, progress fill, file counts, per-step rows, error line, and a
+trailing action that flips between cancel and dismiss), and an explicit empty state. Card
+actions resolve their entry by walking the source entity to the card root and dispatch the
+typed routes; the bubble reclaims the corner the frame after the page leaves the stage.
+
+## Behavorial parity notes
+
+- Legacy `RefreshTaskManagerButton`: `show = hasVisibleTask && !IsTaskManagerVisible`;
+  progress = active average, 1.0 when only finished tasks remain. Preserved exactly.
+- Legacy stage plan names are kept (版本信息 / 游戏文件 / 加载器 / 附加组件 / 完成) so
+  planner keyword resolution behaves identically.
+- Speed formatting keeps the legacy unit ladder (B/s → GB/s, F1 below the first unit).

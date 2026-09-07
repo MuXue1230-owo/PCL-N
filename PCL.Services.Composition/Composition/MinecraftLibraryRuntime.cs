@@ -4,10 +4,19 @@ using PCL.Xsr.Runtime;
 
 namespace PCL.Services.Composition;
 
-public sealed class MinecraftLibraryRuntime(MinecraftLibraryService service, XsrCommandRouter commands) : IDisposable
+public sealed class MinecraftLibraryRuntime : IDisposable
 {
-    public XsrCommandRouter Commands { get; } = commands;
-    public void Dispose() => service.Dispose();
+    public MinecraftLibraryRuntime(MinecraftLibraryService service, XsrCommandRouter commands)
+    {
+        Service = service;
+        Commands = commands;
+    }
+
+    public MinecraftLibraryService Service { get; }
+
+    public XsrCommandRouter Commands { get; }
+
+    public void Dispose() => Service.Dispose();
 }
 
 public static class MinecraftLibraryRuntimeComposer

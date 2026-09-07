@@ -227,7 +227,8 @@ internal sealed partial class LaunchPageController : IDisposable
         TimeProvider? timeProvider = null,
         IVersionDirectoryEffects? directoryEffects = null,
         Func<Task<string?>>? pickJava = null,
-        XsrCommandRouter? installCatalogCommands = null, XsrQueryRouter? installCatalogQueries = null)
+        XsrCommandRouter? installCatalogCommands = null, XsrQueryRouter? installCatalogQueries = null,
+        XsrCommandRouter? installRunCommands = null)
     {
         ArgumentNullException.ThrowIfNull(shell);
         ArgumentNullException.ThrowIfNull(intents);
@@ -244,6 +245,7 @@ internal sealed partial class LaunchPageController : IDisposable
         _pickJava = pickJava;
         _installCatalogCommands = installCatalogCommands;
         _installCatalogQueries = installCatalogQueries;
+        _installRunCommands = installRunCommands;
         _store = store;
         _feedback = feedback;
         StateObserver = new LaunchingStateObserver(this);
@@ -749,7 +751,57 @@ internal sealed partial class LaunchPageController : IDisposable
             ?.ReadDraft().Trim() ?? string.Empty;
         string version = requested.Length == 0 ? _selectedInstallVersion : requested;
         string selection = _selectedInstallBuilds.Count == 0 ? _selectedInstallLoader : string.Join(" + ", _selectedInstallBuilds.Select(pair => pair.Key + " " + pair.Value));
-        _feedback.Warn($"Java 版 {version}（{selection}）安装服务尚未迁移，暂不能开始下载。");
+        // The selection is real: dispatch the install run and follow it in the task center.
+        if (!BeginInstallRun(version)) { _feedback.Warn($"无法开始安装 Java 版 {version}（{selection}）。"); }
+    }
+
+    /// <summary>
+    /// Dispatches the real install pipeline with the current selection. The primary loader is
+    /// the first selected build the eligibility query does not classify as an addon; every
+    /// other selected build rides along as an addon jar. Returns false when the install route
+    /// is unavailable (tests without the runtime) or the selection is empty.
+    /// </summary>
+    private bool BeginInstallRun(string version)
+    {
+        if (_installRunCommands is null
+            || !_installRunCommands.TryResolve(MinecraftInstallRoutes.Run, out XsrCommandId route))
+        {
+            return false;
+        }
+
+        InstallEligibilityResult? eligibility = QueryInstallEligibility();
+        (InstallLoader Kind, string Build)? primary = null;
+        List<MinecraftInstallAddon> addons = [];
+        foreach (KeyValuePair<InstallLoader, string> build in _selectedInstallBuilds)
+        {
+            bool isAddon = eligibility?.Loaders.Any(
+                loader => loader.Loader == build.Key && loader.IsAddon) == true;
+            if (isAddon)
+            {
+                addons.Add(new MinecraftInstallAddon(build.Key, build.Value));
+            }
+            else if (primary is null)
+            {
+                primary = (build.Key, build.Value);
+            }
+            else
+            {
+                _feedback.Warn("一次只能选择一个主加载器。");
+                return false;
+            }
+        }
+
+        string root = ReadCell(LaunchPageState.InstanceDirectoryKey);
+        if (string.IsNullOrWhiteSpace(root)) { _feedback.Warn("尚未确定 Minecraft 目录。"); return false; }
+        _ = _installRunCommands.Dispatch(route, new MinecraftInstallCommand(
+            root,
+            version,
+            primary?.Kind,
+            primary?.Build,
+            addons));
+        // Manual starts watch their task immediately (parity with the legacy task manager).
+        _intents.Emit(XsrSemanticId.Parse("ui.tasks.open"), default, XsrCorrelationId.Create());
+        return true;
     }
 
     private bool IsKeyboardIntent(XsrUiEntityId source) => source.IsAssigned

@@ -4,6 +4,9 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("install runs the real pipeline into the version library", InstallRunsTheRealPipelineIntoTheVersionLibrary),
+        ("install rejects processor loaders before touching disk", InstallRejectsProcessorLoadersBeforeTouchingDisk),
+        ("install cancel marks the task canceled", InstallCancelMarksTheTaskCanceled),
         ("task center tracks lifecycle and summary", TaskCenterTracksLifecycleAndSummary),
         ("task center cancel routes to owner token", TaskCenterCancelRoutesToOwnerToken),
         ("task center stages never move backwards", TaskCenterStagesNeverMoveBackwards),

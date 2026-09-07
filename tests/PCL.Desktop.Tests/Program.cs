@@ -309,8 +309,10 @@ internal static partial class Program
         AssertTrue(FindByKey(fixture.Shell, java, "CatalogRow:loader:fixture.2").IsSelected);
         Emit(fixture.Intents, "ui.install.addon.fabric-api");
         Emit(fixture.Intents, "ui.install.start");
+        // Without the install runtime wired (fixture), the start button still refuses loudly
+        // instead of silently doing nothing; the real pipeline is covered by services tests.
         AssertTrue(fixture.Feedback.Snapshot().Notifications.Any(notification =>
-            notification.Level == DesktopNotificationLevel.Warn && notification.Message.Contains("尚未迁移", StringComparison.Ordinal)));
+            notification.Level == DesktopNotificationLevel.Warn && notification.Message.Contains("无法开始安装", StringComparison.Ordinal)));
         Emit(fixture.Intents, "ui.install.loader.vanilla");
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertEqual(7, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);

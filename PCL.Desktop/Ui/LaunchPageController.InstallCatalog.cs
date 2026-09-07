@@ -10,6 +10,7 @@ internal sealed partial class LaunchPageController
 {
     private readonly XsrCommandRouter? _installCatalogCommands;
     private readonly XsrQueryRouter? _installCatalogQueries;
+    private readonly XsrCommandRouter? _installRunCommands;
     private bool _installGameChosen;
     private Task _installPrefetchTask = Task.CompletedTask;
     private void PrefetchInstallCatalog(string game)
