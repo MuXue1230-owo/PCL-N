@@ -80,3 +80,10 @@ accent color identifies Java versus Bedrock without filling the complete window 
 Existing keys, commands, pager ordering, conditional addon visibility and installation truth
 remain unchanged. All motion is still renderer-owned; no additional animation clock or service
 boundary is introduced. Validate Desktop/PXML contracts and architecture, plus a trimmed build.
+
+## User-directed compact layout
+
+Supersedes the visual revision above: input and install action return to the top.
+Component tabs are horizontal text labels with a two-pixel active underline, followed by a
+one-pixel divider. The Minecraft catalog is a plain list with a leading selected checkmark.
+Version values remain the existing catalog values, not illustrative mockup version numbers.

@@ -889,17 +889,17 @@ internal sealed class LaunchPageController : IDisposable
 
         // Navigation, catalog and commit action are separate spatial groups. The pager and
         // press transitions remain owned by UI.Next, preserving interruptible motion.
-        ApplyVisual(entities["JavaInstallPagerTabs"], ProfileSurface, PrimaryText,
+        ApplyVisual(entities["JavaInstallPagerTabs"], XsrUiColor.Transparent, PrimaryText,
             XsrUiCornerRadii.Surface);
-        ApplyVisual(entities["JavaInstallEntryRow"], ProfileSurface, PrimaryText,
+        ApplyVisual(entities["JavaInstallEntryRow"], XsrUiColor.Transparent, PrimaryText,
             XsrUiCornerRadii.Surface);
 
+        ApplyVisual(entities["JavaInstallDivider"], CardBorder, PrimaryText, 0);
         foreach (JavaInstallSubpage subpage in JavaInstallSubpages)
         {
             if (entities.TryGetValue(subpage.PageKey, out XsrUiEntityId page))
             {
-                ApplyVisual(page, new(255, 255, 255), PrimaryText,
-                    XsrUiCornerRadii.Surface, border: CardBorder);
+                ApplyVisual(page, XsrUiColor.Transparent, PrimaryText, 0);
             }
 
             StyleText(entities, subpage.PageKey + "Title", PrimaryText, 19, 650);
@@ -1028,12 +1028,15 @@ internal sealed class LaunchPageController : IDisposable
         }
 
         ApplyVisual(entity,
-            active ? InstallJavaTint : XsrUiColor.Transparent,
+            XsrUiColor.Transparent,
             active ? InstallJavaAccent : SecondaryText,
             XsrUiCornerRadii.Inset,
             border: null,
             hover: active ? InstallJavaTint : PickerBackground);
         StyleText(entity, active ? InstallJavaAccent : SecondaryText, 13, active ? 650 : 500);
+        StyleText(entities, key + "Text", active ? InstallJavaAccent : SecondaryText, 14, active ? 650 : 500);
+        if (entities.TryGetValue(key + "Underline", out XsrUiEntityId underline))
+            ApplyVisual(underline, active ? InstallJavaAccent : XsrUiColor.Transparent, PrimaryText, 0);
         AlignText(entity, XsrUiTextAlignment.Center);
         XsrUiSelection selection = _shell.Tree.GetComponent<XsrUiSelection>(entity) ?? new XsrUiSelection();
         selection.IsSelected = active;
@@ -1108,6 +1111,20 @@ internal sealed class LaunchPageController : IDisposable
             }
 
             bool selected = key == selectedKey;
+            if (key.StartsWith("JavaVersion", StringComparison.Ordinal))
+            {
+                string version = key switch { "JavaVersion1211" => "1.21.1", "JavaVersion1206" => "1.20.6", _ => "1.20.1" };
+                _shell.Tree.GetComponent<XsrUiText>(entity)!.Content = (selected ? "✓   " : "     ") + version;
+                ApplyVisual(entity, XsrUiColor.Transparent, PrimaryText, 0, hover: PickerBackground);
+                StyleText(entity, PrimaryText, 15, selected ? 600 : 400);
+                AlignText(entity, XsrUiTextAlignment.Start);
+                XsrUiSelection rowSelection = _shell.Tree.GetComponent<XsrUiSelection>(entity) ?? new XsrUiSelection();
+                rowSelection.IsSelected = selected;
+                _shell.Tree.SetComponent(entity, rowSelection);
+                _shell.Tree.MarkDirty(entity, XsrUiDirtyKinds.Layout | XsrUiDirtyKinds.Paint);
+                continue;
+            }
+
             ApplyVisual(entity,
                 selected ? selectedBackground : new(255, 255, 255),
                 selected ? accent : PrimaryText,

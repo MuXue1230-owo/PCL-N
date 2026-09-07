@@ -259,15 +259,18 @@ internal static partial class Program
         AssertEqual(XsrUiOrientation.Horizontal, pager.Pager!.Value.Direction);
         AssertEqual(0, pager.Pager!.Value.PageIndex);
         XsrUiSceneNode rail = FindByKey(fixture.Shell, java, "JavaInstallPagerTabs");
-        AssertTrue(pager.Rect.X >= rail.Rect.X + rail.Rect.Width);
-        AssertTrue(input.Rect.Y >= pager.Rect.Y + pager.Rect.Height);
+        AssertTrue(pager.Rect.Y >= rail.Rect.Y + rail.Rect.Height);
+        XsrUiSceneNode underline = FindByKey(fixture.Shell, java, "JavaMinecraftTabUnderline");
+        AssertTrue(underline.Rect.Width > 40);
+        AssertClose(2, underline.Rect.Height);
+        AssertTrue(input.Rect.Y + input.Rect.Height <= rail.Rect.Y);
         foreach (XsrUiSize size in new[] { new XsrUiSize(1024, 600), new XsrUiSize(850, 520) })
         {
             XsrUiScene compact = fixture.Shell.Render(size);
             XsrUiSceneNode compactPager = FindByKey(fixture.Shell, compact, "JavaInstallPager");
             XsrUiSceneNode compactAction = FindByKey(fixture.Shell, compact, "JavaInstallStart");
             AssertTrue(compactPager.Rect.Width > 400);
-            AssertTrue(compactAction.Rect.Y >= compactPager.Rect.Y + compactPager.Rect.Height);
+            AssertTrue(compactAction.Rect.Y + compactAction.Rect.Height <= compactPager.Rect.Y);
             AssertTrue(compactAction.Rect.Y + compactAction.Rect.Height <= size.Height);
         }
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
@@ -304,6 +307,8 @@ internal static partial class Program
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaInstallVersionInput").TextInput!.Value.DisplayText);
         AssertTrue(FindByKey(fixture.Shell, java, "JavaVersion1206").IsSelected);
+        AssertEqual("✓   1.20.6", FindByKey(fixture.Shell, java, "JavaVersion1206").Text);
+        AssertEqual("     1.21.1", FindByKey(fixture.Shell, java, "JavaVersion1211").Text);
 
         Emit(fixture.Intents, "ui.install.page.fabric");
         AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
