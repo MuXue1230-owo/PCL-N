@@ -3,23 +3,24 @@
 
 
     <StackPanel Key="JavaInstallEntryRow" Orientation="Horizontal" Height="40" Spacing="12">
-      <TextInput Key="JavaInstallVersionInput" Label="Minecraft 版本" Placeholder="输入版本，例如 1.21.1" Weight="1" Height="40" />
-      <Button Key="JavaInstallStart" Label="开始安装 Java 版 Minecraft" Content="开始安装" Icon="lucide/download"
+      <TextInput Key="JavaInstallVersionInput" Label="搜索版本" Placeholder="搜索版本" Weight="1" Height="40" />
+      <Button Key="JavaInstallStart" Label="开始安装 Java 版 Minecraft" Content="开始安装" Icon="lucide/arrow-right"
               Command="ui.install.start" Width="124" Height="40" />
     </StackPanel>
-    <StackPanel Key="JavaInstallPagerTabs" Label="Java 版安装子页面" Orientation="Horizontal" Height="40" Spacing="6" Scroll="true">
-      <Button Key="JavaMinecraftTab" Label="显示 Minecraft 安装选项" Content="Minecraft" Command="ui.install.page.minecraft" Height="36" Width="104" Padding="12,0,12,0" />
-      <Button Key="JavaForgeTab" Label="显示 Forge 安装选项" Content="Forge" Command="ui.install.page.forge" Height="36" Width="76" Padding="12,0,12,0" />
-      <Button Key="JavaCleanroomTab" Label="显示 Cleanroom 安装选项" Content="Cleanroom" Command="ui.install.page.cleanroom" Height="36" Width="104" Padding="12,0,12,0" />
-      <Button Key="JavaNeoForgeTab" Label="显示 NeoForge 安装选项" Content="NeoForge" Command="ui.install.page.neoforge" Height="36" Width="96" Padding="12,0,12,0" />
-      <Button Key="JavaFabricTab" Label="显示 Fabric 安装选项" Content="Fabric" Command="ui.install.page.fabric" Height="36" Width="80" Padding="12,0,12,0" />
-      <Button Key="JavaLegacyFabricTab" Label="显示 Legacy Fabric 安装选项" Content="Legacy Fabric" Command="ui.install.page.legacy-fabric" Height="36" Width="128" Padding="12,0,12,0" />
-      <Button Key="JavaFabricApiTab" Label="显示 Fabric API 安装选项" Content="Fabric API" Command="ui.install.page.fabric-api" Height="36" Width="112" IsVisible="false" Padding="12,0,12,0" />
-      <Button Key="JavaQuiltTab" Label="显示 Quilt 安装选项" Content="Quilt" Command="ui.install.page.quilt" Height="36" Width="104" Padding="12,0,12,0" />
-      <Button Key="JavaQslTab" Label="显示 QSL 安装选项" Content="QSL" Command="ui.install.page.qsl" Height="36" Width="112" IsVisible="false" Padding="12,0,12,0" />
-      <Button Key="JavaLabyModTab" Label="显示 LabyMod 安装选项" Content="LabyMod" Command="ui.install.page.labymod" Height="36" Width="76" Padding="12,0,12,0" />
-      <Button Key="JavaOptiFineTab" Label="显示 OptiFine 安装选项" Content="OptiFine" Command="ui.install.page.optifine" Height="36" Width="96" Padding="12,0,12,0" />
-      <Button Key="JavaLiteLoaderTab" Label="显示 LiteLoader 安装选项" Content="LiteLoader" Command="ui.install.page.liteloader" Height="36" Width="112" Padding="12,0,12,0" />
+    <StackPanel Key="JavaInstallPagerTabs" Label="Java 版安装子页面" Orientation="Horizontal" Height="44" Spacing="2" Padding="4,0,4,0" Scroll="true">
+      <ContentHost Key="JavaInstallThumb" IsVisible="false" />
+      <Button Key="JavaMinecraftTab" Label="显示 Minecraft 安装选项" Content="Minecraft" Command="ui.install.page.minecraft" Height="36" VerticalAlignment="Center" Width="104" Padding="0" />
+      <Button Key="JavaForgeTab" Label="显示 Forge 安装选项" Content="Forge" Command="ui.install.page.forge" Height="36" VerticalAlignment="Center" Width="76" Padding="0" />
+      <Button Key="JavaCleanroomTab" Label="显示 Cleanroom 安装选项" Content="Cleanroom" Command="ui.install.page.cleanroom" Height="36" VerticalAlignment="Center" Width="104" Padding="0" />
+      <Button Key="JavaNeoForgeTab" Label="显示 NeoForge 安装选项" Content="NeoForge" Command="ui.install.page.neoforge" Height="36" VerticalAlignment="Center" Width="96" Padding="0" />
+      <Button Key="JavaFabricTab" Label="显示 Fabric 安装选项" Content="Fabric" Command="ui.install.page.fabric" Height="36" VerticalAlignment="Center" Width="80" Padding="0" />
+      <Button Key="JavaLegacyFabricTab" Label="显示 Legacy Fabric 安装选项" Content="Legacy Fabric" Command="ui.install.page.legacy-fabric" Height="36" VerticalAlignment="Center" Width="128" Padding="0" />
+      <Button Key="JavaFabricApiTab" Label="显示 Fabric API 安装选项" Content="Fabric API" Command="ui.install.page.fabric-api" Height="36" VerticalAlignment="Center" Width="112" IsVisible="false" Padding="0" />
+      <Button Key="JavaQuiltTab" Label="显示 Quilt 安装选项" Content="Quilt" Command="ui.install.page.quilt" Height="36" VerticalAlignment="Center" Width="104" Padding="0" />
+      <Button Key="JavaQslTab" Label="显示 QSL 安装选项" Content="QSL" Command="ui.install.page.qsl" Height="36" VerticalAlignment="Center" Width="112" IsVisible="false" Padding="0" />
+      <Button Key="JavaLabyModTab" Label="显示 LabyMod 安装选项" Content="LabyMod" Command="ui.install.page.labymod" Height="36" VerticalAlignment="Center" Width="76" Padding="0" />
+      <Button Key="JavaOptiFineTab" Label="显示 OptiFine 安装选项" Content="OptiFine" Command="ui.install.page.optifine" Height="36" VerticalAlignment="Center" Width="96" Padding="0" />
+      <Button Key="JavaLiteLoaderTab" Label="显示 LiteLoader 安装选项" Content="LiteLoader" Command="ui.install.page.liteloader" Height="36" VerticalAlignment="Center" Width="112" Padding="0" />
     </StackPanel>
 
     <ContentHost Key="JavaInstallCatalogHost" Label="Java 版安装子页面内容" Weight="1" MinHeight="180">
@@ -28,28 +29,9 @@
         <StackPanel Key="JavaMinecraftPage" Label="Minecraft 安装选项" Orientation="Vertical" Spacing="12" Padding="0,4,0,0" Scroll="true">
           <Text Key="JavaMinecraftPageTitle" Content="Minecraft" Height="28" IsVisible="false" />
 
-          <StackPanel Key="JavaMinecraftVersions" Orientation="Vertical" Spacing="2" Padding="8">
-            <Button Key="JavaVersion1211" Label="选择 Minecraft 1.21.1" Command="ui.install.version.1.21.1" Height="48" Padding="12,0,12,0">
-              <StackPanel Orientation="Horizontal" Spacing="12" Weight="1">
-                <Image Key="JavaVersion1211Check" Source="lucide/check" Width="18" Height="18" VerticalAlignment="Center" />
-                <Text Key="JavaVersion1211Name" Content="1.21.1" Weight="1" Height="24" VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-            <Button Key="JavaVersion1206" Label="选择 Minecraft 1.20.6" Command="ui.install.version.1.20.6" Height="48" Padding="12,0,12,0">
-              <StackPanel Orientation="Horizontal" Spacing="12" Weight="1">
-                <Image Key="JavaVersion1206Check" Source="lucide/check" Width="18" Height="18" VerticalAlignment="Center" />
-                <Text Key="JavaVersion1206Name" Content="1.20.6" Weight="1" Height="24" VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-            <Button Key="JavaVersion1201" Label="选择 Minecraft 1.20.1" Command="ui.install.version.1.20.1" Height="48" Padding="12,0,12,0">
-              <StackPanel Orientation="Horizontal" Spacing="12" Weight="1">
-                <Image Key="JavaVersion1201Check" Source="lucide/check" Width="18" Height="18" VerticalAlignment="Center" />
-                <Text Key="JavaVersion1201Name" Content="1.20.1" Weight="1" Height="24" VerticalAlignment="Center" />
-              </StackPanel>
-            </Button>
-          </StackPanel>
+          <StackPanel Key="JavaMinecraftVersions" Orientation="Vertical" Spacing="2" Padding="8" />
           <Button Key="JavaLoaderVanilla" Label="选择原版 Minecraft" Content="使用原版 Minecraft"
-                  Command="ui.install.loader.vanilla" Height="36" Width="180" HorizontalAlignment="Start" />
+                  Command="ui.install.loader.vanilla" Height="36" VerticalAlignment="Center" Width="180" HorizontalAlignment="Start" />
         </StackPanel>
 
         <StackPanel Key="JavaForgePage" Label="Forge 安装选项" Orientation="Vertical" Spacing="12" Padding="0,4,0,0">

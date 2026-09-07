@@ -1,3 +1,4 @@
+using PCL.Services.Minecraft.Install;
 using System.Globalization;
 using PCL.Pxml;
 using PCL.Services.Accounts;
@@ -23,7 +24,7 @@ namespace PCL.Desktop.Ui;
 /// Navigation intents route between this page and placeholders for destinations whose slices
 /// have not landed yet.
 /// </summary>
-internal sealed class LaunchPageController : IDisposable
+internal sealed partial class LaunchPageController : IDisposable
 {
     private static readonly XsrSemanticId LaunchRoute = XsrSemanticId.Parse("ui.navigation.launch");
     private static readonly XsrSemanticId InstallRoute = XsrSemanticId.Parse("ui.navigation.download");
@@ -184,7 +185,7 @@ internal sealed class LaunchPageController : IDisposable
     private readonly XsrUiEntityId _bedrockInstallPage;
     private readonly Dictionary<string, XsrUiEntityId> _javaInstallEntities;
     private int _presentedJavaInstallPage = -1;
-    private string _selectedInstallVersion = "1.21.1";
+    private string _selectedInstallVersion = "";
     private string _selectedInstallLoader = "原版 Minecraft";
     private readonly HashSet<string> _selectedInstallAddons = new(StringComparer.Ordinal);
     private string _activeJavaInstallPage = "JavaMinecraftPage";
@@ -224,7 +225,8 @@ internal sealed class LaunchPageController : IDisposable
         XsrCommandRouter? accountCommands = null,
         TimeProvider? timeProvider = null,
         IVersionDirectoryEffects? directoryEffects = null,
-        Func<Task<string?>>? pickJava = null)
+        Func<Task<string?>>? pickJava = null,
+        XsrCommandRouter? installCatalogCommands = null)
     {
         ArgumentNullException.ThrowIfNull(shell);
         ArgumentNullException.ThrowIfNull(intents);
@@ -239,6 +241,7 @@ internal sealed class LaunchPageController : IDisposable
         _accountCommands = accountCommands;
         _timeProvider = timeProvider ?? TimeProvider.System;
         _pickJava = pickJava;
+        _installCatalogCommands = installCatalogCommands;
         _store = store;
         _feedback = feedback;
         StateObserver = new LaunchingStateObserver(this);
@@ -252,6 +255,7 @@ internal sealed class LaunchPageController : IDisposable
         _wardrobePage = LoadVersionSubpage("AccountWardrobePage", "更衣橱");
         (_installPage, _) = LoadInstallPage();
         (_javaInstallPage, _javaInstallEntities) = LoadJavaInstallPage();
+        InitializeInstallCatalog();
         UpdateJavaInstallSubpageVisibility();
         _bedrockInstallPage = LoadBedrockInstallPage();
         (_launchingPage, _launchingEntities) = LoadLaunchingPage();
@@ -292,7 +296,7 @@ internal sealed class LaunchPageController : IDisposable
     {
         lock (_refreshGate)
         {
-            return _refreshTask;
+            return Task.WhenAll(_refreshTask, _installCatalogTask, _installPrefetchTask);
         }
     }
 
@@ -407,6 +411,7 @@ internal sealed class LaunchPageController : IDisposable
             return;
         }
 
+        if (HandleInstallCatalogIntent(e)) return;
         XsrSemanticId command = e.Intent.Command;
         if (command == LaunchRoute)
         {
@@ -421,6 +426,7 @@ internal sealed class LaunchPageController : IDisposable
         else if (command == InstallJavaCommand)
         {
             OpenSubpage(_javaInstallPage, e.Intent.Source);
+            RequestInstallCatalog();
             RefreshJavaInstallPresentation();
         }
         else if (command == InstallBedrockCommand)
@@ -679,6 +685,7 @@ internal sealed class LaunchPageController : IDisposable
         }
 
         _activeJavaInstallPage = pageKey;
+        RequestInstallCatalog();
         _ = _shell.Renderer.SelectPagerPage(pager, index);
         RefreshJavaInstallPresentation();
     }
@@ -686,6 +693,7 @@ internal sealed class LaunchPageController : IDisposable
     private void SelectInstallVersion(string version, string key)
     {
         _selectedInstallVersion = version;
+        ChooseInstallGame(version);
         _ = _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], version);
         StyleInstallChoices(
             _javaInstallEntities,
@@ -698,6 +706,9 @@ internal sealed class LaunchPageController : IDisposable
     private void SelectInstallLoader(string loader, string key)
     {
         _selectedInstallLoader = loader;
+        if (loader == "原版 Minecraft") _selectedInstallBuilds.Clear();
+        if (loader != "Fabric") _selectedInstallBuilds.Remove(InstallLoader.FabricApi);
+        if (loader != "Quilt") _selectedInstallBuilds.Remove(InstallLoader.Qsl);
         _selectedInstallAddons.Clear();
         StyleInstallChoices(
             _javaInstallEntities,
@@ -730,10 +741,11 @@ internal sealed class LaunchPageController : IDisposable
 
     private void NotifyInstallUnavailable()
     {
+        if (!_installGameChosen) { _feedback.Warn("请先选择 Minecraft 版本。"); return; }
         string requested = _shell.Tree.GetComponent<XsrUiTextInput>(_javaInstallEntities["JavaInstallVersionInput"])
             ?.ReadDraft().Trim() ?? string.Empty;
         string version = requested.Length == 0 ? _selectedInstallVersion : requested;
-        string selection = string.Join(" + ", new[] { _selectedInstallLoader }.Concat(_selectedInstallAddons.Order()));
+        string selection = _selectedInstallBuilds.Count == 0 ? _selectedInstallLoader : string.Join(" + ", _selectedInstallBuilds.Select(pair => pair.Key + " " + pair.Value));
         _feedback.Warn($"Java 版 {version}（{selection}）安装服务尚未迁移，暂不能开始下载。");
     }
 
@@ -889,8 +901,11 @@ internal sealed class LaunchPageController : IDisposable
 
         // Navigation, catalog and commit action are separate spatial groups. The pager and
         // press transitions remain owned by UI.Next, preserving interruptible motion.
-        ApplyVisual(entities["JavaInstallPagerTabs"], XsrUiColor.Transparent, PrimaryText,
-            XsrUiCornerRadii.Surface);
+        ApplyVisual(entities["JavaInstallPagerTabs"], ProfileSurface, PrimaryText,
+            10);
+        _shell.Tree.SetComponent(entities["JavaInstallPagerTabs"], new XsrUiSegmentedTrack(entities["JavaInstallThumb"]));
+        _shell.Tree.SetComponent(entities["JavaInstallThumb"], new XsrUiTransition());
+        ApplyVisual(entities["JavaInstallThumb"], new(255, 255, 255), PrimaryText, 8);
         ApplyVisual(entities["JavaInstallEntryRow"], XsrUiColor.Transparent, PrimaryText,
             XsrUiCornerRadii.Surface);
 
@@ -903,6 +918,7 @@ internal sealed class LaunchPageController : IDisposable
             }
 
             StyleText(entities, subpage.PageKey + "Title", PrimaryText, 19, 650);
+            _shell.Tree.SetComponent(entities[subpage.TabKey], new XsrUiSegmentReveal(_shell.Tree.GetComponent<XsrUiElement>(entities[subpage.TabKey])!.Width!.Value));
             ApplyPagerTab(entities, subpage.TabKey, active: subpage.PageKey == "JavaMinecraftPage");
         }
     }
@@ -948,9 +964,18 @@ internal sealed class LaunchPageController : IDisposable
         ShowJavaInstallSubpage(target);
     }
 
-    private bool ShouldShowJavaInstallSubpage(JavaInstallSubpage subpage) =>
-        subpage.RequiresLoader is not { } required
-        || string.Equals(_selectedInstallLoader, required, StringComparison.Ordinal);
+    private bool ShouldShowJavaInstallSubpage(JavaInstallSubpage subpage)
+    {
+        if (subpage.PageKey == "JavaMinecraftPage") return true;
+        if (!_installGameChosen) return false;
+        if (subpage.RequiresLoader is { } required) return _selectedInstallLoader == required;
+        InstallLoader? loader = ParseInstallLoader(subpage.Loader);
+        if (loader is null || !_supportedInstallLoaders.Contains(loader.Value)) return false;
+        InstallLoader? selected = ParseInstallLoader(_selectedInstallLoader);
+        return (selected is null || InstallCompatibility.CanCombine(selected.Value, loader.Value, _selectedInstallVersion))
+            && _selectedInstallBuilds.Keys.Where(kind => kind is not (InstallLoader.FabricApi or InstallLoader.Qsl))
+                .All(kind => InstallCompatibility.CanCombine(kind, loader.Value, _selectedInstallVersion));
+    }
 
     private void SetInstallEntityVisible(string key, bool visible)
     {
@@ -959,6 +984,11 @@ internal sealed class LaunchPageController : IDisposable
             return;
         }
 
+        if (_shell.Tree.GetComponent<XsrUiSegmentReveal>(entity) is not null)
+        {
+            _shell.Renderer.SetSegmentExpanded(entity, visible, immediate: !_attached);
+            return;
+        }
         XsrUiElement element = _shell.Tree.GetComponent<XsrUiElement>(entity) ?? new XsrUiElement();
         if (element.IsVisible == visible)
         {
@@ -1020,10 +1050,12 @@ internal sealed class LaunchPageController : IDisposable
         }
 
         ApplyVisual(entity,
-            active ? DesktopUiPalette.CapsuleBackground : ProfileSurface,
+            XsrUiColor.Transparent,
             active ? BadgeText : DesktopUiPalette.CapsuleForeground,
-            XsrUiCornerRadii.Pill(36),
-            hover: DesktopUiPalette.CapsuleHover, hoverExpand: true);
+            0,
+            hover: XsrUiColor.Transparent);
+        if (active && entities.TryGetValue("JavaInstallPagerTabs", out XsrUiEntityId tabs))
+            _shell.Tree.GetComponent<XsrUiSegmentedTrack>(tabs)!.Selected = entity;
         StyleText(entity, active ? BadgeText : DesktopUiPalette.CapsuleForeground, 13, active ? 650 : 500);
         AlignText(entity, XsrUiTextAlignment.Center);
         XsrUiSelection selection = _shell.Tree.GetComponent<XsrUiSelection>(entity) ?? new XsrUiSelection();
@@ -1239,6 +1271,7 @@ internal sealed class LaunchPageController : IDisposable
     {
         ProjectLibrary();
         RefreshJavaInstallPresentation();
+        ProjectInstallCatalog();
         if (Interlocked.Exchange(ref _pendingCloseLaunching, 0) == 1)
         {
             CloseLaunchingPage();

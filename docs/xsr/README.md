@@ -75,6 +75,7 @@ The user-requested constraints take precedence:
 - [migrations/XSR-713-diagnostic-breadcrumbs.md](migrations/XSR-713-diagnostic-breadcrumbs.md) — English operation/stage logs, early startup capture, complete production router observation and credential-safe diagnostics
 - [migrations/XSR-714-in-window-feedback.md](migrations/XSR-714-in-window-feedback.md) — window-internal lower-left notification service, modal PXML dialogs, accessibility/motion contract, and Java acquisition confirmation migration
 - [migrations/XSR-721-install-entry-and-java-catalog.md](migrations/XSR-721-install-entry-and-java-catalog.md) — title-free Java/Bedrock two-card installation entry, embedded twelve-slice Java catalog with conditional Fabric API/QSL slices, wheel-inert horizontal pager, and truthful unavailable-installer feedback
+- [migrations/XSR-722-install-catalog.md](migrations/XSR-722-install-catalog.md) — background catalogs, merged addon sources, compatibility-driven draggable selector, virtualized lists and search/name input
 
 ## Decision process
 

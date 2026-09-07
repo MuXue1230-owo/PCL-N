@@ -239,6 +239,7 @@ internal static class Program
         setStage("attach_product_controllers");
         AvaloniaUiPlatformActions platformActions = new();
         using MinecraftLibraryRuntime library = MinecraftLibraryRuntimeComposer.Compose(host, minecraftRootDirectory, minecraft.Instances, operationLog.Dispatch);
+        using InstallCatalogRuntime installCatalog = InstallCatalogRuntimeComposer.Compose(host, observer: operationLog.Dispatch);
         using LaunchPageController launchPage = new(
             shell,
             uiIntents,
@@ -246,7 +247,7 @@ internal static class Program
             runtime.Commands,
             runtime.Host.StateStore,
             library, feedback, accountCommands: accounts.Commands,
-            directoryEffects: new NativeVersionDirectoryEffects(platformActions), pickJava: platformActions.PickJavaFileAsync);
+            directoryEffects: new NativeVersionDirectoryEffects(platformActions), pickJava: platformActions.PickJavaFileAsync, installCatalogCommands: installCatalog.Commands);
         using AccountFormController accountForm = new(shell, uiIntents, accounts.Commands,
             runtime.Host.StateStore, launchPage.AccountBody, feedback,
             new NativeAccountUiEffects(platformActions), runtime.Host.Logging);

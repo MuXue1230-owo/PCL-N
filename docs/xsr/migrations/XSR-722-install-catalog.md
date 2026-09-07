@@ -68,3 +68,16 @@ Before game selection, the top input filters the Minecraft catalog without repla
 entity or moving its caret. Selecting a game switches it to the editable installation name;
 clearing the game restores search mode. Search projection is recomputed only when text/catalog
 changes, while visible row realization remains bounded independently of total catalog size.
+
+## Validation (2026-09-07)
+
+- Services: 225 tests; UI.Next: 84; Desktop: 59; Avalonia backend: 7 groups.
+- Architecture: all 29 projects pass dependency and boundary checks.
+- Windows x64 NativeAOT: Desktop suite passes all 59 tests; Services executable passes the four
+  install-catalog provider/merge/prefetch/cancellation tests. Both publishes complete without warnings.
+- A 10,000-version Desktop fixture keeps fewer than 30 rows/spacers alive at a 600 px viewport,
+  preserves extent at a 250,000 px scroll offset, retains overlapping entity identity and input focus,
+  and proves prefetch provider invocation uses a background thread while the UI remains interactive.
+- Opt-in live provider smoke: Mojang and all nine base-loader endpoints return catalogs. Fabric API
+  and QSL each return merged Modrinth/CurseForge download sources without partial-source warnings.
+  Reproduce with `dotnet run --project tests/PCL.Services.Tests -- --live-install-catalog`.

@@ -1,3 +1,4 @@
+using PCL.Services.Minecraft.Install;
 using PCL.Desktop.Ui;
 using PCL.Services.Accounts;
 using PCL.Services.Composition;
@@ -34,6 +35,7 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("install catalog virtualizes and prefetches off UI thread", InstallCatalogVirtualizesAndPrefetchesOffUiThread),
         ("Windows property store roundtrips the game AUMID", WindowPropertyStoreRoundTripsAppId),
         ("version selection uses the captured directory for launch and restores each selection", VersionSelectionUsesDirectoryQualifiedLaunch),
         ("version list remains compact searchable and scrollable with distinct icons", VersionListKeepsCompactGeometryAndIcons),
@@ -246,6 +248,7 @@ internal static partial class Program
         AssertFalse(root.Nodes.Any(node => node.Label is "Java 版渐变背景图区域" or "Bedrock 版渐变背景图区域"));
 
         Emit(fixture.Intents, "ui.install.java");
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         XsrUiScene java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(HasKey(fixture.Shell, java, "JavaInstallPage"));
         AssertEqual("安装 Java 版", FindByKey(fixture.Shell, java, "TitleSubpage").Text);
@@ -253,7 +256,7 @@ internal static partial class Program
         AssertFalse(HasKey(fixture.Shell, java, "JavaInstallDescription"));
         XsrUiSceneNode input = FindByKey(fixture.Shell, java, "JavaInstallVersionInput");
         XsrUiSceneNode start = FindByKey(fixture.Shell, java, "JavaInstallStart");
-        AssertEqual("1.21.1", input.TextInput!.Value.DisplayText);
+        AssertEqual("", input.TextInput!.Value.DisplayText);
         AssertTrue(start.Rect.X >= input.Rect.X + input.Rect.Width);
         AssertEqual(XsrUiCornerRadii.Pill(40), start.VisualStyle.CornerRadius);
         XsrUiSceneNode pager = FindByKey(fixture.Shell, java, "JavaInstallPager");
@@ -261,7 +264,7 @@ internal static partial class Program
         AssertEqual(0, pager.Pager!.Value.PageIndex);
         XsrUiSceneNode rail = FindByKey(fixture.Shell, java, "JavaInstallPagerTabs");
         AssertTrue(pager.Rect.Y >= rail.Rect.Y + rail.Rect.Height);
-        AssertEqual(XsrUiCornerRadii.Pill(36), FindByKey(fixture.Shell, java, "JavaMinecraftTab").VisualStyle.CornerRadius);
+        AssertClose(0, FindByKey(fixture.Shell, java, "JavaMinecraftTab").VisualStyle.CornerRadius);
         AssertTrue(input.Rect.Y + input.Rect.Height <= rail.Rect.Y);
         foreach (XsrUiSize size in new[] { new XsrUiSize(1024, 600), new XsrUiSize(850, 520) })
         {
@@ -275,106 +278,49 @@ internal static partial class Program
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         pager = FindByKey(fixture.Shell, java, "JavaInstallPager");
 
-        AssertEqual(10, pager.Pager!.Value.PageCount);
-        AssertFalse(fixture.Shell.Renderer.PointerScroll(
-            new XsrUiPoint(pager.Rect.X + pager.Rect.Width / 2, pager.Rect.Y + pager.Rect.Height / 2), 1));
-        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(0, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageIndex);
-
-        string[] allJavaInstallPages =
-        [
-            "JavaMinecraftPage", "JavaForgePage", "JavaCleanroomPage", "JavaNeoForgePage",
-            "JavaFabricPage", "JavaLegacyFabricPage", "JavaFabricApiPage", "JavaQuiltPage",
-            "JavaQslPage", "JavaLabyModPage", "JavaOptiFinePage", "JavaLiteLoaderPage",
-        ];
-        string[] allJavaInstallTabs =
-        [
-            "JavaMinecraftTab", "JavaForgeTab", "JavaCleanroomTab", "JavaNeoForgeTab",
-            "JavaFabricTab", "JavaLegacyFabricTab", "JavaFabricApiTab", "JavaQuiltTab",
-            "JavaQslTab", "JavaLabyModTab", "JavaOptiFineTab", "JavaLiteLoaderTab",
-        ];
-        foreach (string key in allJavaInstallPages.Concat(allJavaInstallTabs))
-        {
-            AssertTrue(FindEntity(fixture.Shell, key).IsAssigned);
-        }
+        AssertEqual(1, pager.Pager!.Value.PageCount);
+        AssertFalse(IsVisible(fixture.Shell, "JavaForgePage"));
         AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiTab"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaQslPage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
-
-        Emit(fixture.Intents, "ui.install.version.1.20.6");
+        fixture.Shell.Renderer.ReducedMotion = true;
+        AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, java, "CatalogRow:game:1.20.6").Entity));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaInstallVersionInput").TextInput!.Value.DisplayText);
-        AssertTrue(FindByKey(fixture.Shell, java, "JavaVersion1206").IsSelected);
-        AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaVersion1206Name").Text);
-        AssertEqual((byte)255, FindByKey(fixture.Shell, java, "JavaVersion1206Check").VisualStyle.Foreground.Alpha);
-        AssertEqual((byte)0, FindByKey(fixture.Shell, java, "JavaVersion1211Check").VisualStyle.Foreground.Alpha);
-        AssertEqual("1.21.1", FindByKey(fixture.Shell, java, "JavaVersion1211Name").Text);
-
+        AssertEqual(7, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricTab"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaForgeTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaCleanroomTab"));
+        AssertTrue(FindByKey(fixture.Shell, java, "CatalogRow:game:1.20.6").IsSelected);
         Emit(fixture.Intents, "ui.install.page.fabric");
-        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
-            FindEntity(fixture.Shell, "JavaFabricTab"))!.IsSelected);
-        Emit(fixture.Intents, "ui.install.loader.fabric");
-        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
-            FindEntity(fixture.Shell, "JavaLoaderFabric"))!.IsSelected);
-        AssertTrue(IsVisible(fixture.Shell, "JavaMinecraftPage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaFabricPage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiPage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaForgePage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaQuiltPage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaQslPage"));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(11, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
-
+        AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, java, "CatalogRow:loader:fixture.2").Entity));
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaForgeTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
+        AssertTrue(FindByKey(fixture.Shell, java, "CatalogRow:loader:fixture.2").IsSelected);
         Emit(fixture.Intents, "ui.install.addon.fabric-api");
-        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
-            FindEntity(fixture.Shell, "JavaFabricApiSelect"))!.IsSelected);
-
         Emit(fixture.Intents, "ui.install.start");
         AssertTrue(fixture.Feedback.Snapshot().Notifications.Any(notification =>
-            notification.Level == DesktopNotificationLevel.Warn
-            && notification.Message.Contains("1.20.6", StringComparison.Ordinal)
-            && notification.Message.Contains("Fabric", StringComparison.Ordinal)
-            && notification.Message.Contains("Fabric API", StringComparison.Ordinal)
-            && notification.Message.Contains("尚未迁移", StringComparison.Ordinal)));
-
-        // Base loaders remain reachable directly; only incompatible dependent slices disappear.
+            notification.Level == DesktopNotificationLevel.Warn && notification.Message.Contains("尚未迁移", StringComparison.Ordinal)));
+        Emit(fixture.Intents, "ui.install.loader.vanilla");
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(7, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
         Emit(fixture.Intents, "ui.install.page.forge");
         Emit(fixture.Intents, "ui.install.loader.forge");
-        AssertTrue(IsVisible(fixture.Shell, "JavaForgePage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
-        AssertFalse(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
-            FindEntity(fixture.Shell, "JavaFabricApiSelect"))!.IsSelected);
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(10, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertTrue(IsVisible(fixture.Shell, "JavaOptiFineTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiTab"));
+        Emit(fixture.Intents, "ui.install.loader.vanilla");
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
         Emit(fixture.Intents, "ui.install.page.quilt");
         Emit(fixture.Intents, "ui.install.loader.quilt");
-        AssertTrue(IsVisible(fixture.Shell, "JavaMinecraftPage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaQuiltPage"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaQslPage"));
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
         AssertTrue(IsVisible(fixture.Shell, "JavaQslTab"));
-        AssertTrue(IsVisible(fixture.Shell, "JavaFabricPage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
-        Emit(fixture.Intents, "ui.install.addon.qsl");
-        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
-            FindEntity(fixture.Shell, "JavaQslSelect"))!.IsSelected);
-
-        foreach (string loader in new[] { "vanilla", "forge", "cleanroom", "neoforge", "fabric", "legacy-fabric", "quilt", "labymod", "optifine", "liteloader" })
-        {
-            Emit(fixture.Intents, "ui.install.loader." + loader);
-            foreach (string key in allJavaInstallPages.Concat(allJavaInstallTabs)
-                .Where(key => !key.StartsWith("JavaFabricApi", StringComparison.Ordinal)
-                    && !key.StartsWith("JavaQsl", StringComparison.Ordinal)))
-                AssertTrue(IsVisible(fixture.Shell, key));
-            AssertEqual(loader == "fabric", IsVisible(fixture.Shell, "JavaFabricApiPage"));
-            AssertEqual(loader == "fabric", IsVisible(fixture.Shell, "JavaFabricApiTab"));
-            AssertEqual(loader == "quilt", IsVisible(fixture.Shell, "JavaQslPage"));
-            AssertEqual(loader == "quilt", IsVisible(fixture.Shell, "JavaQslTab"));
-            java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-            AssertEqual(loader is "fabric" or "quilt" ? 11 : 10,
-                FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
-        }
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiTab"));
 
         Emit(fixture.Intents, "ui.page.back");
         XsrUiScene backAtRoot = fixture.Shell.Render(new XsrUiSize(1280, 800));
@@ -615,7 +561,8 @@ internal static partial class Program
             AccountOnboardingOptions? accountOptions = null,
             bool enableSkins = false,
             TimeProvider? timeProvider = null,
-            IVersionDirectoryEffects? directoryEffects = null)
+            IVersionDirectoryEffects? directoryEffects = null,
+            IInstallCatalogSource? installSource = null)
         {
             _temporaryDirectory = Path.Combine(
                 Path.GetTempPath(),
@@ -653,6 +600,7 @@ internal static partial class Program
             string minecraftRoot = Path.Combine(_temporaryDirectory, "minecraft");
             Directory.CreateDirectory(minecraftRoot);
             Library = MinecraftLibraryRuntimeComposer.Compose(host, minecraftRoot, source);
+            InstallCatalog = InstallCatalogRuntimeComposer.Compose(host, installSource ?? new FixtureInstallSource());
             Controller = new LaunchPageController(
                 Shell,
                 Intents,
@@ -661,13 +609,14 @@ internal static partial class Program
                 Store,
                 Library,
                 Feedback, accountCommands: enableSkins ? Onboarding.Commands : null,
-                timeProvider: timeProvider, directoryEffects: directoryEffects);
+                timeProvider: timeProvider, directoryEffects: directoryEffects, installCatalogCommands: InstallCatalog.Commands);
             AccountForm = new AccountFormController(Shell, Intents, Onboarding.Commands, Store,
                 Controller.AccountBody, Feedback, accountEffects, host.Logging);
             _launchObserverSubscription = storeObservation.Subscribe(Controller.StateObserver);
             Controller.Attach();
         }
 
+        public InstallCatalogRuntime InstallCatalog { get; }
         public XsrUiShell Shell { get; }
         public string TemporaryDirectory => _temporaryDirectory;
         public FoundationRuntime Foundation { get; }
@@ -688,6 +637,7 @@ internal static partial class Program
             Onboarding.Dispose();
             _launchObserverSubscription?.Dispose();
             Controller.Dispose();
+            InstallCatalog.Dispose();
             Library.Dispose();
             FeedbackPresenter.Dispose();
             Feedback.Dispose();
