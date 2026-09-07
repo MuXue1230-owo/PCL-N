@@ -1,0 +1,17 @@
+<Page xmlns="https://pcln.dev/pxml/2026" Key="InstallPage" Label="安装">
+  <StackPanel Key="InstallChoices" Orientation="Horizontal" Weight="1" Spacing="14" Padding="16,16,16,16">
+    <Button Key="InstallJavaChoice" Label="安装 Java 版 Minecraft" Command="ui.install.java" Weight="1" Padding="24,24,24,22">
+      <StackPanel Key="InstallJavaChoiceContent" Orientation="Vertical" Weight="1">
+        <ContentHost Key="InstallJavaArtwork" Weight="1" />
+        <Text Key="InstallJavaTitle" Content="Java" Height="34" HorizontalAlignment="Center" />
+      </StackPanel>
+    </Button>
+
+    <Button Key="InstallBedrockChoice" Label="安装 Bedrock 版 Minecraft" Command="ui.install.bedrock" Weight="1" Padding="24,24,24,22">
+      <StackPanel Key="InstallBedrockChoiceContent" Orientation="Vertical" Weight="1">
+        <ContentHost Key="InstallBedrockArtwork" Weight="1" />
+        <Text Key="InstallBedrockTitle" Content="Bedrock" Height="34" HorizontalAlignment="Center" />
+      </StackPanel>
+    </Button>
+  </StackPanel>
+</Page>

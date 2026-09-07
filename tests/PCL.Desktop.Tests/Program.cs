@@ -48,7 +48,8 @@ internal static partial class Program
         ("launch page replicates the legacy card layout with bound facts", LaunchPageReplicatesLegacyLayout),
         ("launch page matches legacy geometry across wide, default, and minimum windows", LaunchPageMatchesLegacyGeometry),
         ("navigation intents route between launch and placeholder pages", NavigationIntentsRouteBetweenPages),
-        ("download and instance actions route to version management", DownloadAndInstanceActionsRouteToVersionManagement),
+        ("download and instance actions route to installation and version management", DownloadAndInstanceActionsRouteToInstallationAndVersionManagement),
+        ("installation entry presents Java and Bedrock subpages with a horizontal catalog", InstallationEntryPresentsJavaAndBedrockSubpages),
         ("launch page semantics never expose internal entity keys", LaunchPageSemanticsNeverExposeInternalKeys),
         ("instance scan publishes state without mutating the tree from its worker", InstanceScanPublishesWithoutForeignTreeMutation),
         ("an older instance scan cannot overwrite the latest generation", OlderInstanceScanCannotOverwriteLatestGeneration),
@@ -196,15 +197,17 @@ internal static partial class Program
         AssertFalse(launch.Nodes.Any(node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
     }
 
-    private static void DownloadAndInstanceActionsRouteToVersionManagement()
+    private static void DownloadAndInstanceActionsRouteToInstallationAndVersionManagement()
     {
         using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
         fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
 
         Emit(fixture.Intents, "ui.launch.primary");
         AssertEqual(XsrSemanticId.Parse("navigation.download"), fixture.Shell.SelectedNavigationId);
-        AssertTrue(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(
-            node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
+        XsrUiScene install = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, install, "InstallPage"));
+        AssertTrue(HasKey(fixture.Shell, install, "InstallJavaChoice"));
+        AssertFalse(install.Nodes.Any(node => node.Text == "这项功能尚未迁移到 Nexa。你可以返回首页，继续选择版本和启动游戏。"));
         AssertTrue(fixture.Feedback.Snapshot().Notifications.Any(notification =>
             notification.Level == DesktopNotificationLevel.Info
             && notification.Message == "请在安装页选择或下载游戏版本。"));
@@ -216,6 +219,133 @@ internal static partial class Program
         AssertTrue(HasKey(fixture.Shell, scene, "VersionListPage"));
         AssertEqual("选择版本", FindByKey(fixture.Shell, scene, "TitleSubpage").Text);
         AssertFalse(HasKey(fixture.Shell, scene, "LaunchButton"));
+    }
+
+    private static void InstallationEntryPresentsJavaAndBedrockSubpages()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+
+        Emit(fixture.Intents, "ui.navigation.download");
+        XsrUiScene root = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, root, "InstallPage"));
+        XsrUiSceneNode javaChoice = FindByKey(fixture.Shell, root, "InstallJavaChoice");
+        XsrUiSceneNode bedrockChoice = FindByKey(fixture.Shell, root, "InstallBedrockChoice");
+        AssertEqual("安装 Java 版 Minecraft", javaChoice.Label);
+        AssertEqual("安装 Bedrock 版 Minecraft", bedrockChoice.Label);
+        AssertEqual("Java", FindByKey(fixture.Shell, root, "InstallJavaTitle").Text);
+        AssertEqual("Bedrock", FindByKey(fixture.Shell, root, "InstallBedrockTitle").Text);
+        AssertClose(javaChoice.Rect.Width, bedrockChoice.Rect.Width);
+        AssertClose(javaChoice.Rect.Height, bedrockChoice.Rect.Height);
+        AssertClose(javaChoice.Rect.Y, bedrockChoice.Rect.Y);
+        AssertTrue(javaChoice.Rect.Width > 500 && javaChoice.Rect.Height > 500);
+        AssertFalse(HasKey(fixture.Shell, root, "InstallTitle"));
+        AssertFalse(HasKey(fixture.Shell, root, "InstallDescription"));
+        AssertFalse(root.Nodes.Any(node => node.Label is "InstallJavaChoice" or "InstallBedrockChoice"));
+        AssertFalse(root.Nodes.Any(node => node.Label is "Java 版渐变背景图区域" or "Bedrock 版渐变背景图区域"));
+
+        Emit(fixture.Intents, "ui.install.java");
+        XsrUiScene java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, java, "JavaInstallPage"));
+        AssertEqual("安装 Java 版", FindByKey(fixture.Shell, java, "TitleSubpage").Text);
+        AssertFalse(HasKey(fixture.Shell, java, "JavaInstallTitle"));
+        AssertFalse(HasKey(fixture.Shell, java, "JavaInstallDescription"));
+        XsrUiSceneNode input = FindByKey(fixture.Shell, java, "JavaInstallVersionInput");
+        XsrUiSceneNode start = FindByKey(fixture.Shell, java, "JavaInstallStart");
+        AssertEqual("1.21.1", input.TextInput!.Value.DisplayText);
+        AssertTrue(start.Rect.X >= input.Rect.X + input.Rect.Width);
+        AssertEqual(XsrUiCornerRadii.Pill(40), start.VisualStyle.CornerRadius);
+        XsrUiSceneNode pager = FindByKey(fixture.Shell, java, "JavaInstallPager");
+        AssertEqual(XsrUiOrientation.Horizontal, pager.Pager!.Value.Direction);
+        AssertEqual(0, pager.Pager!.Value.PageIndex);
+        AssertEqual(10, pager.Pager!.Value.PageCount);
+        AssertFalse(fixture.Shell.Renderer.PointerScroll(
+            new XsrUiPoint(pager.Rect.X + pager.Rect.Width / 2, pager.Rect.Y + pager.Rect.Height / 2), 1));
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(0, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageIndex);
+
+        string[] allJavaInstallPages =
+        [
+            "JavaMinecraftPage", "JavaForgePage", "JavaCleanroomPage", "JavaNeoForgePage",
+            "JavaFabricPage", "JavaLegacyFabricPage", "JavaFabricApiPage", "JavaQuiltPage",
+            "JavaQslPage", "JavaLabyModPage", "JavaOptiFinePage", "JavaLiteLoaderPage",
+        ];
+        string[] allJavaInstallTabs =
+        [
+            "JavaMinecraftTab", "JavaForgeTab", "JavaCleanroomTab", "JavaNeoForgeTab",
+            "JavaFabricTab", "JavaLegacyFabricTab", "JavaFabricApiTab", "JavaQuiltTab",
+            "JavaQslTab", "JavaLabyModTab", "JavaOptiFineTab", "JavaLiteLoaderTab",
+        ];
+        foreach (string key in allJavaInstallPages.Concat(allJavaInstallTabs))
+        {
+            AssertTrue(FindEntity(fixture.Shell, key).IsAssigned);
+        }
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaQslPage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
+
+        Emit(fixture.Intents, "ui.install.version.1.20.6");
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaInstallVersionInput").TextInput!.Value.DisplayText);
+        AssertTrue(FindByKey(fixture.Shell, java, "JavaVersion1206").IsSelected);
+
+        Emit(fixture.Intents, "ui.install.page.fabric");
+        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
+            FindEntity(fixture.Shell, "JavaFabricTab"))!.IsSelected);
+        Emit(fixture.Intents, "ui.install.loader.fabric");
+        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
+            FindEntity(fixture.Shell, "JavaLoaderFabric"))!.IsSelected);
+        AssertTrue(IsVisible(fixture.Shell, "JavaMinecraftPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaForgePage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaQuiltPage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaQslPage"));
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+
+        Emit(fixture.Intents, "ui.install.addon.fabric-api");
+        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
+            FindEntity(fixture.Shell, "JavaFabricApiSelect"))!.IsSelected);
+
+        Emit(fixture.Intents, "ui.install.start");
+        AssertTrue(fixture.Feedback.Snapshot().Notifications.Any(notification =>
+            notification.Level == DesktopNotificationLevel.Warn
+            && notification.Message.Contains("1.20.6", StringComparison.Ordinal)
+            && notification.Message.Contains("Fabric", StringComparison.Ordinal)
+            && notification.Message.Contains("Fabric API", StringComparison.Ordinal)
+            && notification.Message.Contains("尚未迁移", StringComparison.Ordinal)));
+
+        // Loader pages are mutually exclusive. Return to Minecraft before choosing a second
+        // loader, then verify that the corresponding dependent add-on is the only one exposed.
+        Emit(fixture.Intents, "ui.install.page.minecraft");
+        Emit(fixture.Intents, "ui.install.loader.vanilla");
+        AssertTrue(IsVisible(fixture.Shell, "JavaForgePage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
+        Emit(fixture.Intents, "ui.install.page.quilt");
+        Emit(fixture.Intents, "ui.install.loader.quilt");
+        AssertTrue(IsVisible(fixture.Shell, "JavaMinecraftPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaQuiltPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaQslPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaQslTab"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricPage"));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
+        Emit(fixture.Intents, "ui.install.addon.qsl");
+        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
+            FindEntity(fixture.Shell, "JavaQslSelect"))!.IsSelected);
+
+        Emit(fixture.Intents, "ui.page.back");
+        XsrUiScene backAtRoot = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, backAtRoot, "InstallPage"));
+        Emit(fixture.Intents, "ui.install.bedrock");
+        XsrUiScene bedrock = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, bedrock, "BedrockInstallPage"));
+        AssertEqual("安装 Bedrock 版", FindByKey(fixture.Shell, bedrock, "TitleSubpage").Text);
+        AssertTrue(FindByKey(fixture.Shell, bedrock, "BedrockInstallDescription").Text!
+            .Contains("尚未迁移", StringComparison.Ordinal));
+        AssertFalse(HasKey(fixture.Shell, bedrock, "JavaInstallStart"));
     }
 
     private static void LaunchPageSemanticsNeverExposeInternalKeys()
@@ -415,6 +545,13 @@ internal static partial class Program
                 return true;
             });
         return found;
+    }
+
+    private static bool IsVisible(XsrUiShell shell, string key)
+    {
+        XsrUiEntityId entity = FindEntity(shell, key);
+        return entity.IsAssigned
+            && shell.Tree.GetComponent<XsrUiElement>(entity)?.IsVisible == true;
     }
 
     private static string ReadCell(XsrStateStore store, XsrSemanticId key) =>

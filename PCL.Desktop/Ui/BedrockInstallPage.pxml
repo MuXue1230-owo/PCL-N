@@ -1,0 +1,16 @@
+<Page xmlns="https://pcln.dev/pxml/2026" Key="BedrockInstallPage" Label="安装 Bedrock 版">
+  <ContentHost Key="BedrockInstallHost" Label="Bedrock 版安装迁移状态">
+    <StackPanel Key="BedrockInstallCard" Orientation="Vertical" Width="440" Height="252"
+                HorizontalAlignment="Center" VerticalAlignment="Center" Padding="30" Spacing="14">
+      <Image Key="BedrockInstallIcon" Label="Bedrock 版图标" Source="lucide/box" Width="40" Height="40"
+             HorizontalAlignment="Center" />
+      <StackPanel Key="BedrockInstallHeader" Orientation="Vertical" Spacing="6">
+        <Text Key="BedrockInstallTitle" Content="Bedrock 版安装正在迁移" Height="30"
+              HorizontalAlignment="Center" />
+        <Text Key="BedrockInstallDescription" Content="此功能尚未迁移到 Nexa，因此不会开始下载或显示虚假的安装进度。"
+              Height="48" />
+      </StackPanel>
+      <Text Key="BedrockInstallReturn" Content="你可以使用左上角返回，继续选择 Java 版安装。" Height="24" />
+    </StackPanel>
+  </ContentHost>
+</Page>

@@ -100,12 +100,22 @@ PXML vertical slices continue over the shared shell.
 | XSR-706 | `5a483cf4` + `ec2ba7f3` + `ba9de495` + `56ee0d2a` + `d8bb07d0` | launch acceptance closure: Desktop emits `minecraft.start` with instance/account identity only; Services resolves inheritance, platform, account, Java and settings; Desktop owns generation-safe projection state; PXML `Key` is separated from dynamic accessible `Label`; managed, NativeAOT, trimming, architecture, formatting and benchmark gates pass |
 | XSR-712 | follow-up | defer LiquidGlass: Experimental-only product style, no alternate palette or style-toggle activation; preserve independent motion and capsule controls |
 | XSR-714 | follow-up | in-window feedback: lower-left Info/Warn/Error notifications with fixed lifetimes and manual dismissal; modal PXML dialogs; Java acquisition confirmation migration |
+| XSR-721 | follow-up | title-free Java/Bedrock two-card installation entry; Java version input plus an embedded twelve-slice catalog with conditional Fabric API/QSL slices; `HorizontalPager` accepts drag/Left/Right but ignores mouse/trackpad wheels; unavailable start/Bedrock actions remain truthful and introduce no installer Service boundary |
 
 ## Closed migration unit
 
 XSR-716 fills the version-selection subpage with a persisted multi-directory library, reusing
 instance discovery and settings and carrying root-qualified identity into launch. See
 [XSR-716](migrations/XSR-716-version-library.md) for its contract and acceptance evidence.
+
+XSR-721 makes `安装` a product destination without misrepresenting the incomplete acquisition
+boundary: its root is only Java and Bedrock artwork-ready choice cards, while the Java destination
+contains the embedded twelve-slice catalog rather than further navigation destinations. Fabric API
+and QSL appear only with their compatible selected parent loaders. Its `HorizontalPager` supports
+direct drag and Left/Right keys but ignores mouse and trackpad wheels. The unavailable start and
+Bedrock actions give truthful feedback rather than fabricate an installer Service; the full
+presentation and pending-service rules are locked in
+[XSR-721](migrations/XSR-721-install-entry-and-java-catalog.md).
 
 Every task has an ID and a narrow, testable outcome:
 
