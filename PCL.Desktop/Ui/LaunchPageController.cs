@@ -227,7 +227,7 @@ internal sealed partial class LaunchPageController : IDisposable
         TimeProvider? timeProvider = null,
         IVersionDirectoryEffects? directoryEffects = null,
         Func<Task<string?>>? pickJava = null,
-        XsrCommandRouter? installCatalogCommands = null)
+        XsrCommandRouter? installCatalogCommands = null, XsrQueryRouter? installCatalogQueries = null)
     {
         ArgumentNullException.ThrowIfNull(shell);
         ArgumentNullException.ThrowIfNull(intents);
@@ -243,6 +243,7 @@ internal sealed partial class LaunchPageController : IDisposable
         _timeProvider = timeProvider ?? TimeProvider.System;
         _pickJava = pickJava;
         _installCatalogCommands = installCatalogCommands;
+        _installCatalogQueries = installCatalogQueries;
         _store = store;
         _feedback = feedback;
         StateObserver = new LaunchingStateObserver(this);
@@ -706,12 +707,10 @@ internal sealed partial class LaunchPageController : IDisposable
 
     private void SelectInstallLoader(string loader, string key)
     {
-        _selectedInstallLoader = loader == "OptiFine" && _selectedInstallBuilds.ContainsKey(InstallLoader.Fabric) ? "Fabric" : loader;
+        _selectedInstallLoader = loader;
         if (loader == "原版 Minecraft") _selectedInstallBuilds.Clear();
-        if (_selectedInstallLoader != "Fabric") { _selectedInstallBuilds.Remove(InstallLoader.FabricApi); _selectedInstallBuilds.Remove(InstallLoader.OptiFabric); }
-        if (loader != "Quilt") _selectedInstallBuilds.Remove(InstallLoader.Qsl);
         _selectedInstallAddons.Clear();
-        foreach (InstallLoader addon in _selectedInstallBuilds.Keys.Where(InstallCompatibility.IsAddon))
+        foreach (InstallLoader addon in _selectedInstallBuilds.Keys.Where(kind => QueryInstallEligibility()?.Loaders.Any(item => item.Loader == kind && item.IsAddon) == true))
             _selectedInstallAddons.Add(addon == InstallLoader.FabricApi ? "Fabric API" : addon == InstallLoader.Qsl ? "QSL" : "OptiFabric");
         StyleInstallChoices(
             _javaInstallEntities,
@@ -745,12 +744,7 @@ internal sealed partial class LaunchPageController : IDisposable
     private void NotifyInstallUnavailable()
     {
         if (!_installGameChosen) { _feedback.Warn("请先选择 Minecraft 版本。"); return; }
-        if (_selectedInstallBuilds.ContainsKey(InstallLoader.OptiFabric) && !_selectedInstallBuilds.ContainsKey(InstallLoader.OptiFine))
-        { _feedback.Warn("OptiFabric 需要另选 OptiFine 版本。"); return; }
-        var builds = SelectedInstallCatalogVersions();
-        foreach (var build in builds)
-            if (InstallCompatibility.BuildConflict(build.Key, build.Value, builds) is { } conflict)
-            { _feedback.Warn(conflict); return; }
+        if (QueryInstallEligibility()?.CommitError is { } conflict) { _feedback.Warn(conflict); return; }
         string requested = _shell.Tree.GetComponent<XsrUiTextInput>(_javaInstallEntities["JavaInstallVersionInput"])
             ?.ReadDraft().Trim() ?? string.Empty;
         string version = requested.Length == 0 ? _selectedInstallVersion : requested;
@@ -977,14 +971,14 @@ internal sealed partial class LaunchPageController : IDisposable
     {
         if (subpage.PageKey == "JavaMinecraftPage") return true;
         if (!_installGameChosen) return false;
-        if (subpage.RequiresLoader is { } required) return _selectedInstallLoader == required;
-        InstallLoader? loader = ParseInstallLoader(subpage.Loader);
-        if (loader is null || !_supportedInstallLoaders.Contains(loader.Value)) return false;
-        if (loader == InstallLoader.OptiFine && _selectedInstallLoader == "Fabric" && !_selectedInstallBuilds.ContainsKey(InstallLoader.OptiFabric)) return false;
-        InstallLoader? selected = ParseInstallLoader(_selectedInstallLoader);
-        return (selected is null || InstallCompatibility.CanCombine(selected.Value, loader.Value, _selectedInstallVersion))
-            && _selectedInstallBuilds.Keys.Where(kind => !InstallCompatibility.IsAddon(kind))
-                .All(kind => InstallCompatibility.CanCombine(kind, loader.Value, _selectedInstallVersion));
+        InstallLoader? loader = subpage.PageKey switch
+        {
+            "JavaFabricApiPage" => InstallLoader.FabricApi,
+            "JavaOptiFabricPage" => InstallLoader.OptiFabric,
+            "JavaQslPage" => InstallLoader.Qsl,
+            _ => ParseInstallLoader(subpage.Loader)
+        };
+        return QueryInstallEligibility()?.Loaders.Any(item => item.Loader == loader && item.Visible) == true;
     }
 
     private void SetInstallEntityVisible(string key, bool visible)

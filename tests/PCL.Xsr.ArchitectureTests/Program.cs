@@ -108,6 +108,7 @@ internal static class Program
         ValidateSolution(repositoryRoot, failures);
         ValidateCommonBuildProperties(repositoryRoot, failures);
         ValidateServicesDoNotNameDesktop(repositoryRoot, failures);
+        ValidateDesktopInstallBoundary(repositoryRoot, failures);
         ValidateNativeHostInterop(repositoryRoot, failures);
         ValidatePxmlControlCatalog(repositoryRoot, projectPaths, failures);
         ValidateWave3Ci(repositoryRoot, failures);
@@ -126,6 +127,18 @@ internal static class Program
         }
 
         return 1;
+    }
+
+    private static void ValidateDesktopInstallBoundary(string repositoryRoot, List<string> failures)
+    {
+        foreach (string path in Directory.EnumerateFiles(Path.Combine(repositoryRoot, "PCL.Desktop"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (IsBuildOutput(path)) continue;
+            string source = File.ReadAllText(path);
+            foreach (string forbidden in new[] { "InstallCompatibility", "InstallCatalogService.StateKey" })
+                if (source.Contains(forbidden, StringComparison.Ordinal))
+                    failures.Add($"Desktop must project the sealed install contract, not {forbidden}: {Path.GetRelativePath(repositoryRoot, path)}");
+        }
     }
 
     private static void ValidateServicesDoNotNameDesktop(
@@ -674,6 +687,10 @@ internal static class Program
             "dotnet publish tests/PCL.Pxml.Tests/PCL.Pxml.Tests.csproj",
             "-p:PublishAot=true",
             "pxml-aot/PCL.Pxml.Tests",
+            "pcl-desktop-aot/PCL.Desktop\" --validate-shell",
+            "pcl-desktop-trimmed/PCL.Desktop\" --validate-shell",
+            "-p:PublishTrimmed=true",
+            "-p:TrimMode=link",
             "PxmlControlCatalogDirectory",
             "Fixtures/AlternateCatalog",
             "Fixtures/InvalidCatalog",

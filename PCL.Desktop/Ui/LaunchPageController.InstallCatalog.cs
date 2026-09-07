@@ -9,6 +9,7 @@ namespace PCL.Desktop.Ui;
 internal sealed partial class LaunchPageController
 {
     private readonly XsrCommandRouter? _installCatalogCommands;
+    private readonly XsrQueryRouter? _installCatalogQueries;
     private bool _installGameChosen;
     private Task _installPrefetchTask = Task.CompletedTask;
     private void PrefetchInstallCatalog(string game)
@@ -16,18 +17,13 @@ internal sealed partial class LaunchPageController
         if (_installCatalogCommands is not null && _installCatalogCommands.TryResolve(InstallCatalogRoutes.Prefetch, out XsrCommandId id))
             _installPrefetchTask = _installCatalogCommands.Dispatch(id, new InstallCatalogPrefetchCommand(game), cancellationToken: _lifetimeCancellation.Token).Completion;
     }
-    private readonly HashSet<InstallLoader> _supportedInstallLoaders = [];
     private static InstallLoader? ParseInstallLoader(string? value) => Enum.TryParse(value?.Replace(" ", "", StringComparison.Ordinal), out InstallLoader loader) ? loader : null;
     private void ChooseInstallGame(string version)
     {
         _installGameChosen = true;
         _selectedInstallVersion = version;
         _selectedInstallBuilds.Clear();
-        _supportedInstallLoaders.Clear();
         SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
-        foreach (InstallLoader loader in Enum.GetValues<InstallLoader>())
-            if (!InstallCompatibility.IsAddon(loader)
-                && InstallCompatibility.UnavailableReason(loader, version) is null) _supportedInstallLoaders.Add(loader);
         UpdateJavaInstallSubpageVisibility();
         PrefetchInstallCatalog(version);
         _locateCatalogSelection = true;
@@ -125,7 +121,7 @@ internal sealed partial class LaunchPageController
         _catalogRevision = -1;
         _catalogFirst = -1;
         if (!force && _catalogCache.ContainsKey(key)) return;
-        if (!force && (_store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState)?.Catalogs
+        if (!force && (_store.ReadAppliedValue(_store.Resolve(InstallCatalogStateContract.StateKey)) as InstallCatalogState)?.Catalogs
             .Any(item => item.Revision > 0 && item.Loader == loader && (loader is null || item.GameVersion == _selectedInstallVersion)) == true) return;
         _catalogCache.Remove(key);
         if (_installCatalogCommands.TryResolve(InstallCatalogRoutes.Read, out XsrCommandId id))
@@ -140,8 +136,6 @@ internal sealed partial class LaunchPageController
             return true;
         }
         if (e.Intent.Command != CatalogSelect || !_catalogRows.TryGetValue(e.Intent.Source, out InstallCatalogVersion? version)) return false;
-        if (ActiveCatalogLoader is { } candidate && _selectedInstallBuilds.GetValueOrDefault(candidate) != version.Id
-            && InstallCompatibility.BuildConflict(candidate, version, SelectedInstallCatalogVersions()) is not null) return true;
         if (ActiveCatalogLoader is null)
         {
             if (_installGameChosen && _selectedInstallVersion == version.Id)
@@ -149,7 +143,6 @@ internal sealed partial class LaunchPageController
                 _installGameChosen = false;
                 PrefetchInstallCatalog("");
                 _selectedInstallBuilds.Clear();
-                _supportedInstallLoaders.Clear();
                 SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
                 _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], "");
                 _catalogRevision = -1;
@@ -159,47 +152,36 @@ internal sealed partial class LaunchPageController
             _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], version.Id);
             SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
         }
-        else if (ActiveCatalogLoader is { } addonKind && InstallCompatibility.IsAddon(addonKind))
-        {
-            InstallLoader addon = ActiveCatalogLoader.Value;
-            string name = addon == InstallLoader.FabricApi ? "Fabric API" : addon == InstallLoader.OptiFabric ? "OptiFabric" : "QSL";
-            if (_selectedInstallBuilds.GetValueOrDefault(addon) == version.Id)
-            {
-                _selectedInstallBuilds.Remove(addon); _selectedInstallAddons.Remove(name);
-                if (addon == InstallLoader.OptiFabric) _selectedInstallBuilds.Remove(InstallLoader.OptiFine);
-            }
-            else { _selectedInstallBuilds[addon] = version.Id; _selectedInstallAddons.Add(name); }
-            UpdateJavaInstallSubpageVisibility();
-        }
         else
         {
-            InstallLoader selected = ActiveCatalogLoader.Value;
-            if (_selectedInstallBuilds.GetValueOrDefault(selected) == version.Id)
+            var result = QueryInstallEligibility(ActiveCatalogLoader, [version.Id], version.Id);
+            if (result is null || result.Rejection is not null) return true;
+            _selectedInstallBuilds.Clear();
+            _selectedInstallAddons.Clear();
+            foreach (var item in result.Selection)
             {
-                _selectedInstallBuilds.Remove(selected);
-                if (selected == InstallLoader.Fabric) { _selectedInstallAddons.Remove("OptiFabric"); _selectedInstallBuilds.Remove(InstallLoader.OptiFabric); _selectedInstallBuilds.Remove(InstallLoader.OptiFine); _selectedInstallBuilds.Remove(InstallLoader.FabricApi); _selectedInstallAddons.Remove("Fabric API"); }
-                if (selected == InstallLoader.Quilt) { _selectedInstallBuilds.Remove(InstallLoader.Qsl); _selectedInstallAddons.Remove("QSL"); }
-                InstallLoader? remaining = _selectedInstallBuilds.Keys.Where(kind => !InstallCompatibility.IsAddon(kind)).Cast<InstallLoader?>().FirstOrDefault();
-                _selectedInstallLoader = remaining is { } kind ? JavaInstallSubpages.First(p => ParseInstallLoader(p.Loader) == kind).Loader! : "原版 Minecraft";
-                UpdateJavaInstallSubpageVisibility();
-                _catalogRevision = -1;
-                return true;
+                _selectedInstallBuilds[item.Loader] = item.Version;
+                if (result.Loaders.Any(loader => loader.Loader == item.Loader && loader.IsAddon))
+                    _selectedInstallAddons.Add(item.Loader == InstallLoader.FabricApi ? "Fabric API" : item.Loader == InstallLoader.Qsl ? "QSL" : item.Loader.ToString());
             }
-            foreach (InstallLoader other in _selectedInstallBuilds.Keys.Where(other => !InstallCompatibility.CanCombine(selected, other, _selectedInstallVersion)).ToArray())
-                _selectedInstallBuilds.Remove(other);
-            _selectedInstallBuilds[selected] = version.Id;
-            JavaInstallSubpage page = JavaInstallSubpages.First(p => p.PageKey == _activeJavaInstallPage);
-            SelectInstallLoader(page.Loader!, JavaInstallLoaderKeys.First(k => k == page.PageKey.Replace("Page", "", StringComparison.Ordinal).Replace("Java", "JavaLoader", StringComparison.Ordinal)));
+            _selectedInstallLoader = result.PrimaryLoader is { } primary
+                ? JavaInstallSubpages.First(page => ParseInstallLoader(page.Loader) == primary).Loader! : "原版 Minecraft";
+            UpdateJavaInstallSubpageVisibility();
         }
         _catalogRevision = -1;
         return true;
     }
-    private Dictionary<InstallLoader, InstallCatalogVersion> SelectedInstallCatalogVersions()
+    private InstallEligibilityResult? QueryInstallEligibility(InstallLoader? catalog = null, IReadOnlyList<string>? candidates = null, string? toggle = null)
     {
-        var catalogs = (_store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState)?.Catalogs;
-        return _selectedInstallBuilds.ToDictionary(pair => pair.Key, pair => catalogs?
-            .FirstOrDefault(item => item.Loader == pair.Key && item.GameVersion == _selectedInstallVersion)?
-            .Versions.FirstOrDefault(version => version.Id == pair.Value) ?? new InstallCatalogVersion(pair.Value, ""));
+        if (_installCatalogQueries is null || !_installCatalogQueries.TryResolve(InstallEligibilityContract.Query, out XsrQueryId id)) return null;
+        var query = new InstallEligibilityQuery(_installGameChosen ? _selectedInstallVersion : "",
+            Array.AsReadOnly(_selectedInstallBuilds.Select(pair => new InstallBuildSelection(pair.Key, pair.Value)).ToArray()),
+            ParseInstallLoader(_selectedInstallLoader), catalog, candidates, toggle);
+        var result = _installCatalogQueries.QueryAsync<InstallEligibilityQuery, InstallEligibilityResult>(id, query);
+        // This route is a bounded in-memory projection. Never synchronously wait for an incomplete query.
+        if (!result.IsCompletedSuccessfully) return null;
+        var completed = result.Result;
+        return completed.IsSuccess ? completed.Value : null;
     }
     private void ProjectInstallCatalog()
     {
@@ -209,7 +191,7 @@ internal sealed partial class LaunchPageController
         input.Placeholder = _installGameChosen ? "版本名称" : "搜索版本";
         _shell.Tree.GetComponent<XsrUiSemantic>(inputEntity)!.Label = input.Placeholder;
         RequestInstallCatalog();
-        var catalogState = _store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState;
+        var catalogState = _store.ReadAppliedValue(_store.Resolve(InstallCatalogStateContract.StateKey)) as InstallCatalogState;
         if (catalogState is not null && catalogState.Revision != _catalogStateRevision)
         {
             _catalogStateRevision = catalogState.Revision;
@@ -225,7 +207,7 @@ internal sealed partial class LaunchPageController
         InstallCatalogSnapshot? snapshot = _catalogCache.GetValueOrDefault(cacheKey);
         if (snapshot is null)
         {
-            snapshot = (_store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState)?.Catalogs
+            snapshot = (_store.ReadAppliedValue(_store.Resolve(InstallCatalogStateContract.StateKey)) as InstallCatalogState)?.Catalogs
                 .FirstOrDefault(item => item.Loader == ActiveCatalogLoader && (item.Loader is null || item.GameVersion == _selectedInstallVersion));
             if (snapshot is null || snapshot.Loader != ActiveCatalogLoader
                 || snapshot.Loader is not null && snapshot.GameVersion != _selectedInstallVersion) return;
@@ -290,10 +272,10 @@ internal sealed partial class LaunchPageController
             _shell.Tree.Attach(spacer, host);
         }
         Spacer("CatalogBefore", first * 50);
-        var selection = SelectedInstallCatalogVersions();
+        var eligibility = QueryInstallEligibility(snapshot.Loader, snapshot.Versions.Skip(first).Take(count).Select(v => v.Id).ToArray());
         string message = snapshot.Loading ? "正在获取版本…" : snapshot.Unsupported ?? (snapshot.Error is not null ? "获取失败，请重试。" : snapshot.Versions.Count == 0 ? (query.Length > 0 ? "没有匹配的版本。" : "此游戏版本暂无兼容版本。") : snapshot.Versions[0].Warning is not null ? "部分来源获取失败，点击重试。" : "");
         if (message.Length == 0 && snapshot.Loader is { } noticeLoader && snapshot.Versions.Count > 0)
-            message = InstallCompatibility.BuildNotice(noticeLoader, selection.GetValueOrDefault(noticeLoader) ?? snapshot.Versions[0], selection) ?? "";
+            message = eligibility?.Builds.Values.Select(item => item.Notice).FirstOrDefault(notice => notice is not null) ?? "";
         XsrUiEntityId status = _catalogStatus[_activeJavaInstallPage];
         _shell.Tree.GetComponent<XsrUiText>(status)!.Content = message;
         _shell.Tree.GetComponent<XsrUiElement>(status)!.IsVisible = message.Length > 0;
@@ -301,7 +283,7 @@ internal sealed partial class LaunchPageController
         {
             string key = snapshot.Loader is null ? "game:" + version.Id : "loader:" + version.Id;
             bool selected = _installGameChosen && (snapshot.Loader is null ? version.Id == _selectedInstallVersion : _selectedInstallBuilds.GetValueOrDefault(snapshot.Loader.Value) == version.Id);
-            string? conflict = snapshot.Loader is { } kind ? InstallCompatibility.BuildConflict(kind, version, selection) : null;
+            string? conflict = snapshot.Loader is { } kind ? eligibility?.Builds.GetValueOrDefault(version.Id)?.Conflict : null;
             string detail = conflict ?? (snapshot.Loader is not null ? version.Detail : version.Stable ? "正式版" : "测试版");
             PxmlIrNode Project(PxmlIrNode node) => node with
             {

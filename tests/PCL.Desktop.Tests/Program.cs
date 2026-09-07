@@ -611,7 +611,7 @@ internal static partial class Program
                 Store,
                 Library,
                 Feedback, accountCommands: enableSkins ? Onboarding.Commands : null,
-                timeProvider: timeProvider, directoryEffects: directoryEffects, installCatalogCommands: InstallCatalog.Commands);
+                timeProvider: timeProvider, directoryEffects: directoryEffects, installCatalogCommands: InstallCatalog.Commands, installCatalogQueries: InstallCatalog.Queries);
             AccountForm = new AccountFormController(Shell, Intents, Onboarding.Commands, Store,
                 Controller.AccountBody, Feedback, accountEffects, host.Logging);
             _launchObserverSubscription = storeObservation.Subscribe(Controller.StateObserver);

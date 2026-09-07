@@ -12,6 +12,8 @@ public static partial class InstallCompatibility
     public static string? BuildConflict(InstallLoader loader, InstallCatalogVersion candidate,
         IReadOnlyDictionary<InstallLoader, InstallCatalogVersion> selected)
     {
+        if (loader == InstallLoader.FabricApi && !selected.ContainsKey(InstallLoader.Fabric)) return "请先选择 Fabric";
+        if (loader == InstallLoader.Qsl && !selected.ContainsKey(InstallLoader.Quilt)) return "请先选择 Quilt";
         InstallCatalogVersion? optiFine = loader == InstallLoader.OptiFine ? candidate : selected.GetValueOrDefault(InstallLoader.OptiFine);
         InstallCatalogVersion? forge = loader == InstallLoader.Forge ? candidate : selected.GetValueOrDefault(InstallLoader.Forge);
         if (optiFine is not null && forge is not null && !MatchesForge(optiFine, forge.Id))

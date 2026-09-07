@@ -124,3 +124,13 @@ Windows x64 NativeAOT publishes without warnings and runs all 61 Desktop tests p
 install-catalog Services tests. The live 1.20.1 query resolves both official OptiFabric files and
 validates their embedded dependency declarations without partial warnings. The return-to-selection
 fixture locates Minecraft row 5,000 and loader row 300 after scrolling away and switching pages.
+
+## Service-owned eligibility boundary
+
+InstallCatalogStateContract owns the sealed catalog state key and declaration independently of the
+service implementation. A sealed typed `minecraft.install.eligibility` XSR query computes loader
+visibility, per-build conflict/notice, commit rejection and selection transitions from catalog
+metadata. Desktop supplies selection intent and projects immutable results; it must not reference
+InstallCompatibility, duplicate its predicates, or fetch network metadata. Eligibility queries are
+bounded in-memory reads, with no I/O or asynchronous wait. Architecture regression forbids direct
+Desktop references to compatibility implementation symbols and the former service-owned state key.

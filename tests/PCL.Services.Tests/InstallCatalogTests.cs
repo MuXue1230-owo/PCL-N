@@ -6,6 +6,39 @@ namespace PCL.Services.Tests;
 
 internal static partial class Program
 {
+    private static async ValueTask InstallEligibilityOwnsTransitionsAndProjection()
+    {
+        XsrStateStoreBuilder builder = new(); InstallCatalogStateContract.DeclareState(builder);
+        using InstallCatalogService service = new(builder.Build(), new EligibilityFixtureSource());
+        await service.PrefetchAsync(new("1.20.1"), default);
+        InstallEligibilityResult result = service.Evaluate(new("1.20.1", [], Catalog: InstallLoader.Fabric, ToggleVersion: "0.16.0"));
+        AssertTrue(result.Rejection is null);
+        AssertTrue(result.Loaders.Single(item => item.Loader == InstallLoader.OptiFabric).Visible);
+        AssertTrue(!result.Loaders.Single(item => item.Loader == InstallLoader.OptiFine).Visible);
+        result = service.Evaluate(new("1.20.1", result.Selection, result.PrimaryLoader, InstallLoader.OptiFabric, ToggleVersion: "1.14.3"));
+        AssertTrue(result.Rejection is null); AssertTrue(result.CommitError is not null);
+        AssertTrue(result.Loaders.Single(item => item.Loader == InstallLoader.OptiFine).Visible);
+        result = service.Evaluate(new("1.20.1", result.Selection, result.PrimaryLoader, InstallLoader.OptiFine, ToggleVersion: "I6"));
+        AssertTrue(result.CommitError is null); AssertEqual(3, result.Selection.Count);
+        result = service.Evaluate(new("1.20.1", result.Selection, result.PrimaryLoader, InstallLoader.OptiFabric, ToggleVersion: "1.14.3"));
+        AssertEqual(1, result.Selection.Count); AssertEqual(InstallLoader.Fabric, result.Selection[0].Loader);
+        result = service.Evaluate(new("1.20.1", [], Catalog: InstallLoader.Forge, ToggleVersion: "missing"));
+        AssertTrue(result.Rejection is not null); AssertEqual(0, result.Selection.Count);
+        result = service.Evaluate(new("1.20.1", [new(InstallLoader.Forge, "47.2.19")], InstallLoader.Forge, InstallLoader.OptiFine, ["I6"]));
+        AssertTrue(result.Builds["I6"].Conflict is not null);
+        var empty = service.Evaluate(new("", [])); AssertTrue(empty.Loaders.All(item => !item.Visible));
+    }
+    private sealed class EligibilityFixtureSource : IInstallCatalogSource
+    {
+        public Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([new("1.20.1", "")]);
+        public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([loader switch
+        {
+            InstallLoader.Fabric => new("0.16.0", ""),
+            InstallLoader.OptiFabric => new("1.14.3", "", FabricRequirement: ">=0.8.0"),
+            InstallLoader.OptiFine => new("I6", "", ForgeRequirement: "47.2.18"),
+            _ => new("47.2.19", "")
+        }]);
+    }
     private static async Task LiveInstallCatalogSmoke()
     {
         using HttpClient http = new(); HttpInstallCatalogSource source = new(http);
@@ -129,37 +162,37 @@ internal static partial class Program
     }
     private static async ValueTask InstallPrefetchRetainsSiblingResultsAndCancellation()
     {
-        XsrStateStoreBuilder builder = new(); InstallCatalogService.DeclareState(builder); XsrStateStore store = builder.Build();
+        XsrStateStoreBuilder builder = new(); InstallCatalogStateContract.DeclareState(builder); XsrStateStore store = builder.Build();
         using HttpClient http = new(new CatalogFixtureHandler());
         using InstallCatalogService service = new(store, new HttpInstallCatalogSource(http));
         await service.PrefetchAsync(new("1.20.1"), default);
-        var state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogService.StateKey))!;
+        var state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogStateContract.StateKey))!;
         AssertTrue(state.Catalogs.Count >= 8);
         AssertTrue(state.Catalogs.Where(item => item.Loader is not null).All(item => !item.Loading));
         AssertEqual("47.2.0", state.Catalogs.Single(item => item.Loader == InstallLoader.Forge).Versions[0].Id);
         AssertEqual("0.16.0", state.Catalogs.Single(item => item.Loader == InstallLoader.Fabric).Versions[0].Id);
         await service.PrefetchAsync(new(""), default);
-        state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogService.StateKey))!;
+        state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogStateContract.StateKey))!;
         AssertEqual(1, state.Catalogs.Count);
         using CancellationTokenSource cancellation = new(); cancellation.Cancel();
         await service.ReadAsync(new("1.20.6", InstallLoader.Fabric), cancellation.Token);
-        state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogService.StateKey))!;
+        state = (InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogStateContract.StateKey))!;
         AssertTrue(!state.Catalogs.Single(item => item.Loader == InstallLoader.Fabric).Loading);
         AssertTrue(state.Catalogs.Single(item => item.Loader == InstallLoader.Fabric).Error is not null);
     }
     private static async ValueTask InstallCatalogRejectsStaleResults()
     {
-        XsrStateStoreBuilder builder = new(); InstallCatalogService.DeclareState(builder);
+        XsrStateStoreBuilder builder = new(); InstallCatalogStateContract.DeclareState(builder);
         XsrStateStore store = builder.Build();
         DelayedCatalogSource source = new(); using InstallCatalogService service = new(store, source);
         Task older = service.ReadAsync(new("1.20.1", InstallLoader.Fabric), default);
         Task newer = service.ReadAsync(new("1.21.1", InstallLoader.Forge), default);
         source.Second.SetResult([new("new-loader", "Forge")]); await newer;
         source.First.SetResult([new("old-loader", "Fabric")]); await older;
-        InstallCatalogSnapshot snapshot = ((InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogService.StateKey))!).Catalogs[^1];
+        InstallCatalogSnapshot snapshot = ((InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogStateContract.StateKey))!).Catalogs[^1];
         AssertEqual("1.21.1", snapshot.GameVersion); AssertEqual("new-loader", snapshot.Versions[0].Id);
         await service.ReadAsync(new("1.20.1", InstallLoader.Cleanroom), default);
-        snapshot = ((InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogService.StateKey))!).Catalogs[^1];
+        snapshot = ((InstallCatalogState)store.ReadAppliedValue(store.Resolve(InstallCatalogStateContract.StateKey))!).Catalogs[^1];
         AssertTrue(snapshot.Unsupported is not null); AssertTrue(snapshot.Error is null); AssertTrue(!snapshot.Loading);
     }
     private sealed class DelayedCatalogSource : IInstallCatalogSource

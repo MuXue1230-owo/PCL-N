@@ -4,9 +4,10 @@ using PCL.Xsr.Runtime;
 
 namespace PCL.Services.Composition;
 
-public sealed class InstallCatalogRuntime(InstallCatalogService service, XsrCommandRouter commands, HttpClient? ownedHttp) : IDisposable
+public sealed class InstallCatalogRuntime(InstallCatalogService service, XsrCommandRouter commands, XsrQueryRouter queries, HttpClient? ownedHttp) : IDisposable
 {
     public XsrCommandRouter Commands { get; } = commands;
+    public XsrQueryRouter Queries { get; } = queries;
     public void Dispose() { service.Dispose(); ownedHttp?.Dispose(); }
 }
 public static class InstallCatalogRuntimeComposer
@@ -18,7 +19,11 @@ public static class InstallCatalogRuntimeComposer
         XsrCommandRouterBuilder commands = new();
         commands.Register<InstallCatalogReadCommand>(InstallCatalogRoutes.Read, async (command, token) => await service.ReadAsync(command, token).ConfigureAwait(false));
         commands.Register<InstallCatalogPrefetchCommand>(InstallCatalogRoutes.Prefetch, async (command, token) => await service.PrefetchAsync(command, token).ConfigureAwait(false));
-        return new(service, commands.Build(observer ?? new Observer()), http);
+        XsrQueryRouterBuilder queries = new();
+        queries.Register<InstallEligibilityQuery, InstallEligibilityResult>(InstallEligibilityContract.Query,
+            (query, token) => ValueTask.FromResult(PCL.Xsr.XsrResult.Success(service.Evaluate(query))));
+        var dispatchObserver = observer ?? new Observer();
+        return new(service, commands.Build(dispatchObserver), queries.Build(dispatchObserver), http);
     }
     private sealed class Observer : IXsrDispatchObserver { public void OnCompleted(XsrDispatchObservation observation) { } }
 }

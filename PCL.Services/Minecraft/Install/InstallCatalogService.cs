@@ -4,26 +4,6 @@ using PCL.Xsr.State;
 
 namespace PCL.Services.Minecraft.Install;
 
-public enum InstallLoader { Forge, Cleanroom, NeoForge, Fabric, LegacyFabric, Quilt, LabyMod, OptiFine, LiteLoader, FabricApi, Qsl, OptiFabric }
-public sealed record InstallDownload(string Source, string FileName, Uri Url, string? Sha1, long Size);
-public sealed record InstallCatalogVersion(string Id, string Detail, bool Stable = true,
-    IReadOnlyList<InstallDownload>? Downloads = null, string? Warning = null, string? ForgeRequirement = null, string? FabricRequirement = null);
-public sealed record InstallCatalogState(long Revision, string GameVersion, IReadOnlyList<InstallCatalogSnapshot> Catalogs);
-public sealed record InstallCatalogSnapshot(long Revision, string GameVersion, InstallLoader? Loader,
-    IReadOnlyList<InstallCatalogVersion> Versions, bool Loading, string? Error = null, string? Unsupported = null);
-public interface IInstallCatalogSource
-{
-    Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token);
-    Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token);
-}
-public sealed record InstallCatalogReadCommand(string GameVersion = "", InstallLoader? Loader = null, bool Refresh = false);
-public sealed record InstallCatalogPrefetchCommand(string GameVersion);
-public static class InstallCatalogRoutes
-{
-    public static readonly XsrSemanticId Prefetch = XsrSemanticId.Parse("minecraft.install.catalog.prefetch");
-    public static readonly XsrSemanticId Read = XsrSemanticId.Parse("minecraft.install.catalog.read");
-}
-
 /// <summary>Pure legacy availability gates. Catalog metadata makes the final support decision.</summary>
 public static partial class InstallCompatibility
 {
@@ -70,9 +50,8 @@ public static partial class InstallCompatibility
 }
 
 /// <summary>Background per-catalog acquisition; immutable aggregate publications never drop sibling results.</summary>
-public sealed class InstallCatalogService : IDisposable
+public sealed partial class InstallCatalogService : IDisposable
 {
-    public static readonly XsrSemanticId StateKey = XsrSemanticId.Parse("minecraft.install.catalog");
     private readonly XsrStateStore _store;
     private readonly XsrStateId _state;
     private readonly IInstallCatalogSource _source;
@@ -92,10 +71,9 @@ public sealed class InstallCatalogService : IDisposable
     }
     public InstallCatalogService(XsrStateStore store, IInstallCatalogSource source)
     {
-        _store = store; _source = source; _state = store.Resolve(StateKey);
+        _store = store; _source = source; _state = store.Resolve(InstallCatalogStateContract.StateKey);
         Publish(_games);
     }
-    public static void DeclareState(XsrStateStoreBuilder builder) => builder.Cell<InstallCatalogState>(StateKey, "PCL.Services.Minecraft.Install");
     private void SelectGame(string game)
     {
         if (_game == game) return;

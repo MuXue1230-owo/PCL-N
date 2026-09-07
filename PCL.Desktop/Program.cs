@@ -247,7 +247,7 @@ internal static class Program
             runtime.Commands,
             runtime.Host.StateStore,
             library, feedback, accountCommands: accounts.Commands,
-            directoryEffects: new NativeVersionDirectoryEffects(platformActions), pickJava: platformActions.PickJavaFileAsync, installCatalogCommands: installCatalog.Commands);
+            directoryEffects: new NativeVersionDirectoryEffects(platformActions), pickJava: platformActions.PickJavaFileAsync, installCatalogCommands: installCatalog.Commands, installCatalogQueries: installCatalog.Queries);
         using AccountFormController accountForm = new(shell, uiIntents, accounts.Commands,
             runtime.Host.StateStore, launchPage.AccountBody, feedback,
             new NativeAccountUiEffects(platformActions), runtime.Host.Logging);
