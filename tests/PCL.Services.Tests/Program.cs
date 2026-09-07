@@ -4,6 +4,11 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("task center tracks lifecycle and summary", TaskCenterTracksLifecycleAndSummary),
+        ("task center cancel routes to owner token", TaskCenterCancelRoutesToOwnerToken),
+        ("task center stages never move backwards", TaskCenterStagesNeverMoveBackwards),
+        ("task center abandoned handles surface as failed", TaskCenterAbandonedHandlesSurfaceAsFailed),
+        ("task center clear finished leaves active", TaskCenterClearFinishedLeavesActive),
         ("install catalog addon sources merge and isolate failures", InstallAddonSourcesMergeAndIsolateFailures),
         ("install catalog prefetch retains sibling results and cancellation", InstallPrefetchRetainsSiblingResultsAndCancellation),
         ("install catalog eligibility owns transitions and projection", InstallEligibilityOwnsTransitionsAndProjection),

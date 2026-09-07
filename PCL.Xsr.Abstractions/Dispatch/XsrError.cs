@@ -64,6 +64,10 @@ public static class XsrRuntimeErrors
     public static XsrError RouteNotFound() =>
         new(XsrErrorKind.NotFound, RouteNotFoundCode, "The requested XSR route is not registered.");
 
+    /// <summary>The addressed entity (task, entry, resource) does not exist or is gone.</summary>
+    public static XsrError TargetNotFound(string message) =>
+        new(XsrErrorKind.NotFound, XsrSemanticId.Parse("xsr.target_not_found"), message);
+
     public static XsrError ContractMismatch() =>
         new(XsrErrorKind.ContractMismatch, ContractMismatchCode, "The request type does not match the registered XSR contract.");
 

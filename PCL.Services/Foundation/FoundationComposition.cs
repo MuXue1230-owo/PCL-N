@@ -4,6 +4,7 @@ using PCL.Services.Files;
 using PCL.Services.Logging;
 using PCL.Services.Minecraft.Process;
 using PCL.Services.Settings;
+using PCL.Services.Tasks;
 using PCL.Services.Telemetry;
 using PCL.Xsr.State;
 
@@ -33,6 +34,7 @@ public static class FoundationState
 
         LogService.DeclareState(builder);
         DownloadService.DeclareState(builder);
+        TaskCenterStateContract.DeclareState(builder);
         AccountService.DeclareState(builder);
         AccountOnboardingState.DeclareState(builder);
         AccountSkinService.DeclareState(builder);
@@ -60,7 +62,8 @@ public sealed class FoundationHost
         DownloadService downloads,
         AccountService accounts,
         TelemetryService telemetry,
-        SettingsService settings)
+        SettingsService settings,
+        TaskCenterService tasks)
     {
         StateStore = stateStore ?? throw new ArgumentNullException(nameof(stateStore));
         Logging = logging ?? throw new ArgumentNullException(nameof(logging));
@@ -68,7 +71,8 @@ public sealed class FoundationHost
         Accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         Telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
-        _services = Array.AsReadOnly<object>([Logging, Downloads, Accounts, Telemetry, Settings]);
+        Tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
+        _services = Array.AsReadOnly<object>([Logging, Downloads, Accounts, Telemetry, Settings, Tasks]);
     }
 
     public XsrStateStore StateStore { get; }
@@ -82,6 +86,8 @@ public sealed class FoundationHost
     public TelemetryService Telemetry { get; }
 
     public SettingsService Settings { get; }
+
+    public TaskCenterService Tasks { get; }
 
     /// <summary>Registered services in activation order (for composition diagnostics).</summary>
     public IReadOnlyList<object> Services => _services;
@@ -122,7 +128,8 @@ public static class FoundationComposer
         var accounts = new AccountService(store, profilePort, logging);
         var telemetry = new TelemetryService(store, telemetryCapacity);
         var settings = new SettingsService(store, settingsSchema, settingsPort, logging);
+        var tasks = new TaskCenterService(store);
 
-        return new FoundationHost(store, logging, downloads, accounts, telemetry, settings);
+        return new FoundationHost(store, logging, downloads, accounts, telemetry, settings, tasks);
     }
 }
