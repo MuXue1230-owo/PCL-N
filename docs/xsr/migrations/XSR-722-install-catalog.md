@@ -115,3 +115,12 @@ not a verified matrix: show an inline notice, including reported crashes in
 Sources: https://cleanroommc.com/wiki/end-user-guide/preparing-your-modpack,
 https://github.com/CleanroomMC/Cleanroom/issues/600,
 https://github.com/Ecdcaeb/OptiRefine.
+
+### Follow-up validation (2026-09-07)
+
+The declaration now has 13 ordered slices: OptiFabric follows Fabric API and is conditional on
+Fabric. CoreCLR passes 226 Services and 61 Desktop tests; architecture checks pass all 29 projects.
+Windows x64 NativeAOT publishes without warnings and runs all 61 Desktop tests plus the five
+install-catalog Services tests. The live 1.20.1 query resolves both official OptiFabric files and
+validates their embedded dependency declarations without partial warnings. The return-to-selection
+fixture locates Minecraft row 5,000 and loader row 300 after scrolling away and switching pages.

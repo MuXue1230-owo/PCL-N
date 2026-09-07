@@ -1,16 +1,17 @@
 using PCL.Services.Minecraft.Install;
 using PCL.UI.Next;
 namespace PCL.Desktop.Tests;
+
 internal static partial class Program
 {
-    private sealed class LargeInstallSource : IInstallCatalogSource
+    private sealed class LargeInstallSource(int selectedIndex = 0) : IInstallCatalogSource
     {
         private int _loaderReads;
         public int LoaderReads => Volatile.Read(ref _loaderReads);
         public TaskCompletionSource<int> Started { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public TaskCompletionSource<IReadOnlyList<InstallCatalogVersion>> Loader { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>(
-            Enumerable.Range(0, 10000).Select(i => new InstallCatalogVersion(i == 0 ? "1.20.1" : "fixture-" + i, "release")).ToArray());
+            Enumerable.Range(0, 10000).Select(i => new InstallCatalogVersion(i == selectedIndex ? "1.20.1" : "fixture-" + i, "release")).ToArray());
         public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token)
         { Interlocked.Increment(ref _loaderReads); Started.TrySetResult(Environment.CurrentManagedThreadId); return Loader.Task.WaitAsync(token); }
     }
@@ -76,6 +77,77 @@ internal static partial class Program
         AssertTrue(fixture.Shell.Tree.Children(host).Count < 30);
         AssertTrue(scene.Nodes.Any(node => node.Text is { } text && text.StartsWith("fixture-500", StringComparison.Ordinal)));
         AssertClose(extent, FindByKey(fixture.Shell, scene, "JavaMinecraftPage").Scroll!.Value.ContentHeight);
+    }
+    private static void InstallCatalogReturnsToSelectedGameAndLoader()
+    {
+        LargeInstallSource source = new(5000);
+        source.Loader.SetResult(Enumerable.Range(0, 500).Select(i => new InstallCatalogVersion("build-" + i, "fixture")).ToArray());
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]), installSource: source);
+        fixture.Shell.Renderer.ReducedMotion = true;
+        Emit(fixture.Intents, "ui.navigation.download"); Emit(fixture.Intents, "ui.install.java");
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        fixture.Shell.Renderer.SetTextInputValue(FindEntity(fixture.Shell, "JavaInstallVersionInput"), "1.20.1");
+        XsrUiScene scene = fixture.Shell.Render(new(1024, 600));
+        fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "CatalogRow:game:1.20.1").Entity);
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        scene = fixture.Shell.Render(new(1024, 600));
+        AssertTrue(FindByKey(fixture.Shell, scene, "CatalogRow:game:1.20.1").IsSelected);
+        Emit(fixture.Intents, "ui.install.page.fabric"); scene = fixture.Shell.Render(new(1024, 600));
+        XsrUiEntityId fabric = FindEntity(fixture.Shell, "JavaFabricPage");
+        fixture.Shell.Tree.GetComponent<XsrUiScroll>(fabric)!.OffsetY = 15000;
+        scene = fixture.Shell.Render(new(1024, 600));
+        fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "CatalogRow:loader:build-300").Entity);
+        fixture.Shell.Render(new(1024, 600));
+        fixture.Shell.Tree.GetComponent<XsrUiScroll>(fabric)!.OffsetY = 0;
+        fixture.Shell.Render(new(1024, 600));
+        Emit(fixture.Intents, "ui.install.page.minecraft"); scene = fixture.Shell.Render(new(1024, 600));
+        AssertTrue(FindByKey(fixture.Shell, scene, "CatalogRow:game:1.20.1").IsSelected);
+        Emit(fixture.Intents, "ui.install.page.fabric"); scene = fixture.Shell.Render(new(1024, 600));
+        AssertTrue(FindByKey(fixture.Shell, scene, "CatalogRow:loader:build-300").IsSelected);
+        AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiScroll>(fabric)!.OffsetY > 14000);
+    }
+    private static void InstallCatalogChecksBridgeSelection()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]), installSource: new BridgeInstallSource());
+        fixture.Shell.Renderer.ReducedMotion = true;
+        Emit(fixture.Intents, "ui.navigation.download"); Emit(fixture.Intents, "ui.install.java");
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        void Select(string id)
+        {
+            var scene = fixture.Shell.Render(new(1024, 600));
+            AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "CatalogRow:" + id).Entity));
+            fixture.Shell.Render(new(1024, 600));
+        }
+        Select("game:1.20.1"); fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        Emit(fixture.Intents, "ui.install.page.fabric"); Select("loader:0.16.0");
+        AssertTrue(IsVisible(fixture.Shell, "JavaOptiFabricTab")); AssertFalse(IsVisible(fixture.Shell, "JavaOptiFineTab"));
+        Emit(fixture.Intents, "ui.install.page.optifabric"); Select("loader:1.14.3");
+        AssertTrue(IsVisible(fixture.Shell, "JavaOptiFineTab"));
+        Emit(fixture.Intents, "ui.install.page.optifine"); Select("loader:1.20.1_HD_U_I6");
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab")); AssertTrue(IsVisible(fixture.Shell, "JavaOptiFabricTab"));
+        Emit(fixture.Intents, "ui.install.page.optifabric"); Select("loader:1.14.3");
+        AssertFalse(IsVisible(fixture.Shell, "JavaOptiFineTab"));
+        Select("loader:1.14.3"); Emit(fixture.Intents, "ui.install.page.optifine");
+        var scene = fixture.Shell.Render(new(1024, 600));
+        AssertFalse(FindByKey(fixture.Shell, scene, "CatalogRow:loader:1.20.1_HD_U_I6").IsSelected);
+        Emit(fixture.Intents, "ui.install.loader.vanilla");
+        Emit(fixture.Intents, "ui.install.page.forge"); Select("loader:fixture");
+        Emit(fixture.Intents, "ui.install.page.optifine"); scene = fixture.Shell.Render(new(1024, 600));
+        var incompatible = FindByKey(fixture.Shell, scene, "CatalogRow:loader:1.20.1_HD_U_I6").Entity;
+        AssertFalse(fixture.Shell.Tree.GetComponent<XsrUiInput>(incompatible)!.Enabled);
+        AssertFalse(fixture.Shell.Renderer.Activate(incompatible));
+    }
+    private sealed class BridgeInstallSource : IInstallCatalogSource
+    {
+        public Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([new("1.20.1", "release")]);
+        public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token) =>
+            Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([loader switch
+            {
+                InstallLoader.Fabric => new("0.16.0", "Fabric"),
+                InstallLoader.OptiFabric => new("1.14.3", "Fabric >=0.8.0", FabricRequirement: ">=0.8.0"),
+                InstallLoader.OptiFine => new("1.20.1_HD_U_I6", "Forge 47.2.18", ForgeRequirement: "47.2.18"),
+                _ => new("fixture", "")
+            }]);
     }
     private sealed class FixtureInstallSource : IInstallCatalogSource
     {

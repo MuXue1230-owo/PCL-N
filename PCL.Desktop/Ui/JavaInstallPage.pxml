@@ -16,6 +16,7 @@
       <Button Key="JavaFabricTab" Label="显示 Fabric 安装选项" Content="Fabric" Command="ui.install.page.fabric" Height="36" VerticalAlignment="Center" Width="80" Padding="0" />
       <Button Key="JavaLegacyFabricTab" Label="显示 Legacy Fabric 安装选项" Content="Legacy Fabric" Command="ui.install.page.legacy-fabric" Height="36" VerticalAlignment="Center" Width="128" Padding="0" />
       <Button Key="JavaFabricApiTab" Label="显示 Fabric API 安装选项" Content="Fabric API" Command="ui.install.page.fabric-api" Height="36" VerticalAlignment="Center" Width="112" IsVisible="false" Padding="0" />
+      <Button Key="JavaOptiFabricTab" Label="显示 OptiFabric 安装选项" Content="OptiFabric" Command="ui.install.page.optifabric" Height="36" VerticalAlignment="Center" Width="112" IsVisible="false" Padding="0" />
       <Button Key="JavaQuiltTab" Label="显示 Quilt 安装选项" Content="Quilt" Command="ui.install.page.quilt" Height="36" VerticalAlignment="Center" Width="104" Padding="0" />
       <Button Key="JavaQslTab" Label="显示 QSL 安装选项" Content="QSL" Command="ui.install.page.qsl" Height="36" VerticalAlignment="Center" Width="112" IsVisible="false" Padding="0" />
       <Button Key="JavaLabyModTab" Label="显示 LabyMod 安装选项" Content="LabyMod" Command="ui.install.page.labymod" Height="36" VerticalAlignment="Center" Width="76" Padding="0" />
@@ -70,6 +71,9 @@
                   Command="ui.install.addon.fabric-api" Height="40" />
         </StackPanel>
 
+        <StackPanel Key="JavaOptiFabricPage" Label="OptiFabric 安装选项" Orientation="Vertical" Spacing="12" Padding="0,4,0,0" IsVisible="false">
+          <Text Key="JavaOptiFabricPageTitle" Content="OptiFabric" Height="28" />
+        </StackPanel>
         <StackPanel Key="JavaQuiltPage" Label="Quilt 安装选项" Orientation="Vertical" Spacing="12" Padding="0,4,0,0">
           <Text Key="JavaQuiltPageTitle" Content="Quilt" Height="28" />
           <Button Key="JavaLoaderQuilt" Label="选择 Quilt 加载器" Content="选择 Quilt"

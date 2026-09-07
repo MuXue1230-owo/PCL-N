@@ -26,16 +26,19 @@ internal sealed partial class LaunchPageController
         _supportedInstallLoaders.Clear();
         SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
         foreach (InstallLoader loader in Enum.GetValues<InstallLoader>())
-            if (loader is not (InstallLoader.FabricApi or InstallLoader.Qsl)
+            if (!InstallCompatibility.IsAddon(loader)
                 && InstallCompatibility.UnavailableReason(loader, version) is null) _supportedInstallLoaders.Add(loader);
         UpdateJavaInstallSubpageVisibility();
         PrefetchInstallCatalog(version);
+        _locateCatalogSelection = true;
         _catalogRevision = -1;
     }
     private Task _installCatalogTask = Task.CompletedTask;
     private string _catalogRequest = "";
     private long _catalogRevision = -1;
+    private long _catalogStateRevision = -1;
     private int _catalogFirst = -1, _catalogCount;
+    private bool _locateCatalogSelection;
     private string _catalogSearch = "";
     private long _filteredRevision = -1;
     private IReadOnlyList<InstallCatalogVersion> _filteredGames = [];
@@ -56,11 +59,21 @@ internal sealed partial class LaunchPageController
           </StackPanel>
         </Button>
         """));
-    private InstallLoader? ActiveCatalogLoader => (_activeJavaInstallPage == "JavaFabricApiPage" ? "Fabric API" : _activeJavaInstallPage == "JavaQslPage" ? "QSL" : JavaInstallSubpages.First(p => p.PageKey == _activeJavaInstallPage).Loader) switch
+    private InstallLoader? ActiveCatalogLoader => (_activeJavaInstallPage == "JavaOptiFabricPage" ? "OptiFabric" : _activeJavaInstallPage == "JavaFabricApiPage" ? "Fabric API" : _activeJavaInstallPage == "JavaQslPage" ? "QSL" : JavaInstallSubpages.First(p => p.PageKey == _activeJavaInstallPage).Loader) switch
     {
-        "Fabric API" => InstallLoader.FabricApi, "QSL" => InstallLoader.Qsl, "Forge" => InstallLoader.Forge, "Cleanroom" => InstallLoader.Cleanroom, "NeoForge" => InstallLoader.NeoForge,
-        "Fabric" => InstallLoader.Fabric, "Legacy Fabric" => InstallLoader.LegacyFabric, "Quilt" => InstallLoader.Quilt,
-        "LabyMod" => InstallLoader.LabyMod, "OptiFine" => InstallLoader.OptiFine, "LiteLoader" => InstallLoader.LiteLoader, _ => null,
+        "Fabric API" => InstallLoader.FabricApi,
+        "QSL" => InstallLoader.Qsl,
+        "OptiFabric" => InstallLoader.OptiFabric,
+        "Forge" => InstallLoader.Forge,
+        "Cleanroom" => InstallLoader.Cleanroom,
+        "NeoForge" => InstallLoader.NeoForge,
+        "Fabric" => InstallLoader.Fabric,
+        "Legacy Fabric" => InstallLoader.LegacyFabric,
+        "Quilt" => InstallLoader.Quilt,
+        "LabyMod" => InstallLoader.LabyMod,
+        "OptiFine" => InstallLoader.OptiFine,
+        "LiteLoader" => InstallLoader.LiteLoader,
+        _ => null,
     };
     private void InitializeInstallCatalog()
     {
@@ -81,7 +94,7 @@ internal sealed partial class LaunchPageController
                 string loaderKey = "JavaLoader" + page.PageKey[4..^4];
                 _shell.Tree.GetComponent<XsrUiElement>(_javaInstallEntities[loaderKey])!.IsVisible = false;
             }
-            if (page.RequiresLoader is not null)
+            if (page.PageKey is "JavaFabricApiPage" or "JavaQslPage")
                 _shell.Tree.GetComponent<XsrUiElement>(_javaInstallEntities[page.PageKey == "JavaFabricApiPage" ? "JavaFabricApiSelect" : "JavaQslSelect"])!.IsVisible = false;
             _shell.Tree.GetComponent<XsrUiStackPanel>(host)!.Spacing = 0;
             _shell.Tree.SetComponent(host, new XsrUiStableContent());
@@ -96,6 +109,9 @@ internal sealed partial class LaunchPageController
             _shell.Tree.SetComponent(status, new XsrUiText("正在获取版本…"));
             _shell.Tree.SetComponent(status, new XsrUiVisualStyle { Foreground = SecondaryText, FontSize = 13, WrapText = true });
             _catalogStatus[page.PageKey] = status;
+            // Keep dependency notices ahead of potentially very long version lists.
+            _shell.Tree.Detach(host);
+            _shell.Tree.Attach(host, parent);
         }
     }
     private void RequestInstallCatalog(bool force = false)
@@ -105,6 +121,7 @@ internal sealed partial class LaunchPageController
         string key = CurrentCatalogKey;
         if (!force && key == _catalogRequest) return;
         _catalogRequest = key;
+        _locateCatalogSelection = true;
         _catalogRevision = -1;
         _catalogFirst = -1;
         if (!force && _catalogCache.ContainsKey(key)) return;
@@ -123,6 +140,8 @@ internal sealed partial class LaunchPageController
             return true;
         }
         if (e.Intent.Command != CatalogSelect || !_catalogRows.TryGetValue(e.Intent.Source, out InstallCatalogVersion? version)) return false;
+        if (ActiveCatalogLoader is { } candidate && _selectedInstallBuilds.GetValueOrDefault(candidate) != version.Id
+            && InstallCompatibility.BuildConflict(candidate, version, SelectedInstallCatalogVersions()) is not null) return true;
         if (ActiveCatalogLoader is null)
         {
             if (_installGameChosen && _selectedInstallVersion == version.Id)
@@ -140,15 +159,17 @@ internal sealed partial class LaunchPageController
             _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], version.Id);
             SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
         }
-        else if (ActiveCatalogLoader is InstallLoader.FabricApi or InstallLoader.Qsl)
+        else if (ActiveCatalogLoader is { } addonKind && InstallCompatibility.IsAddon(addonKind))
         {
             InstallLoader addon = ActiveCatalogLoader.Value;
-            string name = addon == InstallLoader.FabricApi ? "Fabric API" : "QSL";
+            string name = addon == InstallLoader.FabricApi ? "Fabric API" : addon == InstallLoader.OptiFabric ? "OptiFabric" : "QSL";
             if (_selectedInstallBuilds.GetValueOrDefault(addon) == version.Id)
             {
                 _selectedInstallBuilds.Remove(addon); _selectedInstallAddons.Remove(name);
+                if (addon == InstallLoader.OptiFabric) _selectedInstallBuilds.Remove(InstallLoader.OptiFine);
             }
             else { _selectedInstallBuilds[addon] = version.Id; _selectedInstallAddons.Add(name); }
+            UpdateJavaInstallSubpageVisibility();
         }
         else
         {
@@ -156,9 +177,9 @@ internal sealed partial class LaunchPageController
             if (_selectedInstallBuilds.GetValueOrDefault(selected) == version.Id)
             {
                 _selectedInstallBuilds.Remove(selected);
-                if (selected == InstallLoader.Fabric) { _selectedInstallBuilds.Remove(InstallLoader.FabricApi); _selectedInstallAddons.Remove("Fabric API"); }
+                if (selected == InstallLoader.Fabric) { _selectedInstallAddons.Remove("OptiFabric"); _selectedInstallBuilds.Remove(InstallLoader.OptiFabric); _selectedInstallBuilds.Remove(InstallLoader.OptiFine); _selectedInstallBuilds.Remove(InstallLoader.FabricApi); _selectedInstallAddons.Remove("Fabric API"); }
                 if (selected == InstallLoader.Quilt) { _selectedInstallBuilds.Remove(InstallLoader.Qsl); _selectedInstallAddons.Remove("QSL"); }
-                InstallLoader? remaining = _selectedInstallBuilds.Keys.Cast<InstallLoader?>().FirstOrDefault();
+                InstallLoader? remaining = _selectedInstallBuilds.Keys.Where(kind => !InstallCompatibility.IsAddon(kind)).Cast<InstallLoader?>().FirstOrDefault();
                 _selectedInstallLoader = remaining is { } kind ? JavaInstallSubpages.First(p => ParseInstallLoader(p.Loader) == kind).Loader! : "原版 Minecraft";
                 UpdateJavaInstallSubpageVisibility();
                 _catalogRevision = -1;
@@ -173,6 +194,13 @@ internal sealed partial class LaunchPageController
         _catalogRevision = -1;
         return true;
     }
+    private Dictionary<InstallLoader, InstallCatalogVersion> SelectedInstallCatalogVersions()
+    {
+        var catalogs = (_store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState)?.Catalogs;
+        return _selectedInstallBuilds.ToDictionary(pair => pair.Key, pair => catalogs?
+            .FirstOrDefault(item => item.Loader == pair.Key && item.GameVersion == _selectedInstallVersion)?
+            .Versions.FirstOrDefault(version => version.Id == pair.Value) ?? new InstallCatalogVersion(pair.Value, ""));
+    }
     private void ProjectInstallCatalog()
     {
         if (_shell.Stage.Navigation.Current != _javaInstallPage || _installCatalogCommands is null) return;
@@ -181,6 +209,18 @@ internal sealed partial class LaunchPageController
         input.Placeholder = _installGameChosen ? "版本名称" : "搜索版本";
         _shell.Tree.GetComponent<XsrUiSemantic>(inputEntity)!.Label = input.Placeholder;
         RequestInstallCatalog();
+        var catalogState = _store.ReadAppliedValue(_store.Resolve(InstallCatalogService.StateKey)) as InstallCatalogState;
+        if (catalogState is not null && catalogState.Revision != _catalogStateRevision)
+        {
+            _catalogStateRevision = catalogState.Revision;
+            _catalogRevision = -1;
+            foreach (string key in _catalogCache.Keys.ToArray())
+            {
+                var cached = _catalogCache[key];
+                if (catalogState.Catalogs.Any(item => item.Loader == cached.Loader && item.GameVersion == cached.GameVersion && item.Revision > cached.Revision))
+                    _catalogCache.Remove(key);
+            }
+        }
         string cacheKey = CurrentCatalogKey;
         InstallCatalogSnapshot? snapshot = _catalogCache.GetValueOrDefault(cacheKey);
         if (snapshot is null)
@@ -212,6 +252,22 @@ internal sealed partial class LaunchPageController
             }
             snapshot = snapshot with { Versions = _filteredGames };
         }
+        if (_locateCatalogSelection && !snapshot.Loading)
+        {
+            _locateCatalogSelection = false;
+            string? selected = snapshot.Loader is null ? _installGameChosen ? _selectedInstallVersion : null
+                : _selectedInstallBuilds.GetValueOrDefault(snapshot.Loader.Value);
+            int selectedIndex = -1;
+            if (selected is not null)
+                for (int index = 0; index < snapshot.Versions.Count; index++)
+                    if (snapshot.Versions[index].Id == selected) { selectedIndex = index; break; }
+            if (selectedIndex >= 0)
+            {
+                _shell.Renderer.FinishScrollInertia(_javaInstallEntities[_activeJavaInstallPage]);
+                scroll.OffsetY = Math.Max(0, selectedIndex * 50 - Math.Max(0, _shell.Renderer.Viewport.Height - 240) / 2);
+                _catalogRevision = -1;
+            }
+        }
         int first = Math.Clamp((int)(Math.Max(0, scroll.OffsetY - 48) / 50) - 4, 0, Math.Max(0, snapshot.Versions.Count - 1));
         int count = Math.Min(snapshot.Versions.Count - first, (int)Math.Ceiling(_shell.Renderer.Viewport.Height / 50) + 10);
         if (snapshot.Revision == _catalogRevision && first == _catalogFirst && count == _catalogCount) return;
@@ -234,7 +290,10 @@ internal sealed partial class LaunchPageController
             _shell.Tree.Attach(spacer, host);
         }
         Spacer("CatalogBefore", first * 50);
+        var selection = SelectedInstallCatalogVersions();
         string message = snapshot.Loading ? "正在获取版本…" : snapshot.Unsupported ?? (snapshot.Error is not null ? "获取失败，请重试。" : snapshot.Versions.Count == 0 ? (query.Length > 0 ? "没有匹配的版本。" : "此游戏版本暂无兼容版本。") : snapshot.Versions[0].Warning is not null ? "部分来源获取失败，点击重试。" : "");
+        if (message.Length == 0 && snapshot.Loader is { } noticeLoader && snapshot.Versions.Count > 0)
+            message = InstallCompatibility.BuildNotice(noticeLoader, selection.GetValueOrDefault(noticeLoader) ?? snapshot.Versions[0], selection) ?? "";
         XsrUiEntityId status = _catalogStatus[_activeJavaInstallPage];
         _shell.Tree.GetComponent<XsrUiText>(status)!.Content = message;
         _shell.Tree.GetComponent<XsrUiElement>(status)!.IsVisible = message.Length > 0;
@@ -242,11 +301,13 @@ internal sealed partial class LaunchPageController
         {
             string key = snapshot.Loader is null ? "game:" + version.Id : "loader:" + version.Id;
             bool selected = _installGameChosen && (snapshot.Loader is null ? version.Id == _selectedInstallVersion : _selectedInstallBuilds.GetValueOrDefault(snapshot.Loader.Value) == version.Id);
+            string? conflict = snapshot.Loader is { } kind ? InstallCompatibility.BuildConflict(kind, version, selection) : null;
+            string detail = conflict ?? (snapshot.Loader is not null ? version.Detail : version.Stable ? "正式版" : "测试版");
             PxmlIrNode Project(PxmlIrNode node) => node with
             {
                 Key = node.Key + ":" + key,
                 Label = node.Key == "CatalogRow" ? (selected ? "已选择 " : "选择 ") + version.Id : node.Label,
-                Content = node.Key switch { "CatalogName" => version.Id, "CatalogDetail" => version.Downloads is not null ? version.Detail : version.Stable ? "正式版" : "测试版", _ => node.Content },
+                Content = node.Key switch { "CatalogName" => version.Id, "CatalogDetail" => detail, _ => node.Content },
                 Children = [.. node.Children.Select(Project)],
             };
             XsrUiEntityId row;
@@ -257,12 +318,14 @@ internal sealed partial class LaunchPageController
                 _shell.Tree.GetComponent<XsrUiElement>(row)!.Margin = new XsrUiThickness(0, 0, 0, 2);
             }
             _shell.Tree.GetComponent<XsrUiSemantic>(row)!.Label = (selected ? "取消选择 " : "选择 ") + version.Id;
+            _shell.Tree.GetComponent<XsrUiInput>(row)!.Enabled = selected || conflict is null;
             _catalogRows[row] = version;
             _shell.Tree.SetComponent(row, new XsrUiSelection { IsSelected = selected });
             ApplyVisual(row, selected ? ProfileSurface : XsrUiColor.Transparent, PrimaryText, XsrUiCornerRadii.Inset, hover: PickerBackground);
             _shell.Tree.Walk(row, entity =>
             {
                 string name = _shell.Tree.Name(entity);
+                if (name.StartsWith("CatalogDetail", StringComparison.Ordinal)) _shell.Tree.GetComponent<XsrUiText>(entity)!.Content = detail;
                 StyleText(entity, name.StartsWith("CatalogDetail", StringComparison.Ordinal) ? SecondaryText : PrimaryText, 14);
                 if (name.StartsWith("CatalogCheck", StringComparison.Ordinal)) ApplyVisual(entity, XsrUiColor.Transparent, selected ? BadgeText : XsrUiColor.Transparent, 0);
                 return true;

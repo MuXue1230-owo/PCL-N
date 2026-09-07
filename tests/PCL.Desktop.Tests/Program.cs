@@ -1,9 +1,9 @@
-using PCL.Services.Minecraft.Install;
 using PCL.Desktop.Ui;
 using PCL.Services.Accounts;
 using PCL.Services.Composition;
 using PCL.Services.Foundation;
 using PCL.Services.Minecraft;
+using PCL.Services.Minecraft.Install;
 using PCL.Services.Minecraft.Launch;
 using PCL.Services.Minecraft.Process;
 using PCL.Services.Settings;
@@ -35,6 +35,8 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("install catalog checks bridge selection and cleanup", InstallCatalogChecksBridgeSelection),
+        ("install catalog returns to selected game and loader", InstallCatalogReturnsToSelectedGameAndLoader),
         ("install catalog virtualizes and prefetches off UI thread", InstallCatalogVirtualizesAndPrefetchesOffUiThread),
         ("Windows property store roundtrips the game AUMID", WindowPropertyStoreRoundTripsAppId),
         ("version selection uses the captured directory for launch and restores each selection", VersionSelectionUsesDirectoryQualifiedLaunch),
@@ -295,7 +297,7 @@ internal static partial class Program
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, java, "CatalogRow:loader:fixture.2").Entity));
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertEqual(4, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
         AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
         AssertFalse(IsVisible(fixture.Shell, "JavaForgeTab"));
         AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
