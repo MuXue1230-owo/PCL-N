@@ -277,25 +277,35 @@ public sealed class MinecraftInstallService : IDisposable
             }
         }
 
-        // ── 游戏文件 / 加载器 / 附加组件: one shared byte budget across all sections.
-        (string stage, List<PlannedFile> files)[] sections =
-        [
-            (StagePlan[1], gameFiles),
-            (StagePlan[2], loaderFiles),
-            (StagePlan[3], addonFiles),
-        ];
-        List<PlannedFile> allFiles = [.. gameFiles.Concat(loaderFiles).Concat(addonFiles)
-            .Where(static file => !File.Exists(file.Destination) || new FileInfo(file.Destination).Length == 0)];
+        // ── 游戏文件 / 加载器 / 附加组件: one shared file budget across all sections. The
+        // transfer list is deduplicated by destination — the same library can appear in both
+        // the vanilla and loader sections, and counting both would desync CompletedFiles from
+        // TotalFiles (a destination downloaded once skips its duplicates without counting).
+        List<(string Stage, PlannedFile File)> planned = [];
+        foreach (List<PlannedFile> files in (List<PlannedFile>[])[gameFiles, loaderFiles, addonFiles])
+        {
+            string stage = files == gameFiles ? StagePlan[1] : files == loaderFiles ? StagePlan[2] : StagePlan[3];
+            foreach (PlannedFile file in files)
+            {
+                planned.Add((stage, file));
+            }
+        }
+
+        List<(string Stage, PlannedFile File)> allFiles = [.. planned
+            .Where(pair => !File.Exists(pair.File.Destination) || new FileInfo(pair.File.Destination).Length == 0)
+            .GroupBy(pair => pair.File.Destination, MinecraftLibraryService.PathComparer)
+            .Select(static group => group.First())];
         int totalFiles = allFiles.Count;
         int doneFiles = 0;
-        foreach ((string Stage, List<PlannedFile> Files) section in sections)
+        foreach ((string Stage, PlannedFile File) pair in allFiles)
         {
-            string stage = section.Stage;
-            foreach (PlannedFile file in section.Files)
+            string stage = pair.Stage;
+            PlannedFile file = pair.File;
             {
                 token.ThrowIfCancellationRequested();
                 if (File.Exists(file.Destination) && new FileInfo(file.Destination).Length > 0)
                 {
+                    doneFiles++;
                     continue;
                 }
 
@@ -328,8 +338,13 @@ public sealed class MinecraftInstallService : IDisposable
 
                 doneFiles++;
             }
+        }
 
-            task.Report(stage, $"{stage}就绪", 0.999, doneFiles, totalFiles, 0);
+        // The last transfer's report lags one file (it fires mid-download); close the file
+        // count before completion so the card never reads 3/4 at 100%.
+        if (totalFiles > 0)
+        {
+            task.Report(StagePlan[3], "下载完成", 0.999, totalFiles, totalFiles, 0);
         }
 
         // The documents land only now: the instance becomes discoverable exactly when its

@@ -162,18 +162,18 @@ internal static partial class Program
                     root, "1.20.1",
                     Loader: InstallLoader.Fabric, LoaderBuild: "0.16.9",
                     Addons: [new MinecraftInstallAddon(InstallLoader.FabricApi, "1.0.0")]));
-            AssertTrue(result.IsSuccess);
+            AssertTrue(result.IsSuccess, $"install failed: {result.Error?.Code} {result.Error?.Message}");
 
             // Both version documents exist before any transfer; the loader one carries identity.
             string vanilla = await File.ReadAllTextAsync(
                 Path.Combine(root, "versions", "1.20.1", "1.20.1.json"));
-            AssertTrue(vanilla.Contains("\"1.20.1\"", StringComparison.Ordinal));
+            AssertTrue(vanilla.Contains("\"1.20.1\"", StringComparison.Ordinal), "vanilla json missing id");
             string loader = await File.ReadAllTextAsync(
                 Path.Combine(root, "versions", "1.20.1-fabric0.16.9", "1.20.1-fabric0.16.9.json"));
             AssertTrue(loader.Contains("\"inheritsFrom\": \"1.20.1\"", StringComparison.Ordinal));
 
             // Client jar, library, asset, asset index, and the addon jar all landed.
-            AssertTrue(File.Exists(Path.Combine(root, "versions", "1.20.1", "1.20.1.jar")));
+            AssertTrue(File.Exists(Path.Combine(root, "versions", "1.20.1", "1.20.1.jar")), "client jar missing");
             AssertTrue(File.Exists(Path.Combine(
                 root, "libraries", "com", "example", "library", "1.0.0", "library-1.0.0.jar")));
             string assetHash = new string('d', 40);
@@ -187,7 +187,8 @@ internal static partial class Program
             // The run reads as one finished task with a file-accurate count.
             TaskCenterEntry entry = fixture.Entry();
             AssertEqual(TaskCenterEntryState.Finished, entry.State);
-            AssertTrue(entry.TotalFiles > 0 && entry.CompletedFiles == entry.TotalFiles);
+            AssertTrue(entry.TotalFiles > 0 && entry.CompletedFiles == entry.TotalFiles,
+                $"files {entry.CompletedFiles}/{entry.TotalFiles}");
         }
         finally
         {
