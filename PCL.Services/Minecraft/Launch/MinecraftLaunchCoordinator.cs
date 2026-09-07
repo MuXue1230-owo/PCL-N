@@ -288,7 +288,8 @@ public sealed class MinecraftLaunchCoordinator
                             token).ConfigureAwait(false);
                     }
                 },
-                cancellationToken).ConfigureAwait(false);
+                cancellationToken,
+                heartbeat: false).ConfigureAwait(false);
             _log?.Debug("Launch", $"Effective manifest resolved instance={instanceId} inherited={manifests.Inherited.Count} loader={loader.Kind}");
             MinecraftJavaRequirementRequest javaRequest = CreateJavaRequirement(
                 instance,
@@ -675,7 +676,8 @@ public sealed class MinecraftLaunchCoordinator
         double stageWeight,
         string method,
         Func<CancellationToken, Task> work,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        bool heartbeat = true)
     {
         if (_progress is null)
         {
@@ -689,7 +691,10 @@ public sealed class MinecraftLaunchCoordinator
             Method: method));
         Task workTask = work(cancellationToken);
         double softFraction = 0d;
-        while (!workTask.IsCompleted)
+        // Stages that publish their own real progress opt out of the heartbeat: the two
+        // clocks fight, and the display flickers between the real value and the heartbeat's
+        // ceiling for as long as the stage runs.
+        while (heartbeat && !workTask.IsCompleted)
         {
             cancellationToken.ThrowIfCancellationRequested();
             softFraction = Math.Min(StageHeartbeatCeiling, softFraction + StageHeartbeatStep);

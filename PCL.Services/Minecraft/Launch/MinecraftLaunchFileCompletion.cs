@@ -175,13 +175,17 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
             }
 
             Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            int filesBefore = done;
             DownloadTransferResult transfer = await TransferAsync(
-                sources, destination, cancellationToken).ConfigureAwait(false);
+                sources, destination, cancellationToken,
+                progress: bytes => ReportProgress(progress, method, filesBefore, missing.Count, bytes))
+                .ConfigureAwait(false);
             if (!transfer.Success)
             {
                 // Mirror rate limits are bursty; one short retry has saved whole launches.
                 await Task.Delay(FileRetryDelay, cancellationToken).ConfigureAwait(false);
-                transfer = await TransferAsync(sources, destination, cancellationToken).ConfigureAwait(false);
+                transfer = await TransferAsync(sources, destination, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             if (!transfer.Success)
@@ -191,23 +195,61 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
             }
 
             done++;
-            double fraction = missing.Count == 0 ? 1d : done / (double)missing.Count;
-            // ProgressAt divides by Total — publishing the raw weight would clamp everything
-            // past 1.0 and the card would flash 100% mid-repair before the next heartbeat
-            // pulled it back down.
-            progress?.Report(new MinecraftLaunchStageReport(
-                MinecraftLaunchStages.CompleteFiles,
-                MinecraftLaunchStages.ProgressAt(
-                    MinecraftLaunchStages.LoginWeight
-                        + (MinecraftLaunchStages.CompleteFilesWeight * Math.Clamp(fraction, 0d, 1d))),
-                Method: method));
+            ReportProgress(progress, method, done, missing.Count, null);
         }
 
-        progress?.Report(new MinecraftLaunchStageReport(
+        ReportProgress(progress, method, missing.Count, missing.Count, null);
+    }
+
+    /// <summary>
+    /// One coherent progress line for the whole repair: (files done + this file's byte
+    /// fraction) over all missing files, mapped through ProgressAt into the complete_files
+    /// band. ProgressAt divides by Total — publishing raw weights would clamp past 1.0 and
+    /// flash 100% mid-repair.
+    /// </summary>
+    private static void ReportProgress(
+        MinecraftLaunchProgressPublisher? progress,
+        string method,
+        int filesDone,
+        int totalFiles,
+        DownloadProgress? bytes)
+    {
+        if (progress is null)
+        {
+            return;
+        }
+
+        double intra = bytes is { } progress1 && progress1.TotalBytes > 0
+            ? Math.Clamp(progress1.DownloadedBytes / (double)progress1.TotalBytes, 0d, 1d)
+            : 0d;
+        double fraction = totalFiles == 0
+            ? 1d
+            : Math.Clamp((filesDone + intra) / totalFiles, 0d, 1d);
+        progress.Report(new MinecraftLaunchStageReport(
             MinecraftLaunchStages.CompleteFiles,
             MinecraftLaunchStages.ProgressAt(
-                MinecraftLaunchStages.LoginWeight + MinecraftLaunchStages.CompleteFilesWeight),
-            Method: method));
+                MinecraftLaunchStages.LoginWeight
+                    + (MinecraftLaunchStages.CompleteFilesWeight * fraction)),
+            Method: method,
+            DownloadSpeed: bytes is { } transfer && transfer.BytesPerSecond > 0
+                ? FormatSpeed(transfer.BytesPerSecond)
+                : null));
+    }
+
+    private static string FormatSpeed(long bytesPerSecond)
+    {
+        double value = bytesPerSecond;
+        string[] units = ["B/s", "KB/s", "MB/s", "GB/s"];
+        int unit = 0;
+        while (value >= 1024d && unit < units.Length - 1)
+        {
+            value /= 1024d;
+            unit++;
+        }
+
+        return string.Create(
+            System.Globalization.CultureInfo.CurrentCulture,
+            $"{value.ToString(unit == 0 ? "F0" : "F1", System.Globalization.CultureInfo.CurrentCulture)} {units[unit]}");
     }
 
     private async ValueTask EnsureAssetIndexAsync(
