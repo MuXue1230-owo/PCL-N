@@ -60,8 +60,8 @@ public sealed partial class HttpInstallCatalogSource
     }
     private async Task<IReadOnlyList<InstallCatalogVersion>> ReadCurseForgeAddonAsync(InstallLoader loader, string game, CancellationToken token)
     {
-        string project = loader == InstallLoader.FabricApi ? "306612" : "634179";
-        int loaderType = loader == InstallLoader.FabricApi ? 4 : 5;
+        string project = loader switch { InstallLoader.FabricApi => "306612", InstallLoader.OptiFabric => "322385", _ => "634179" };
+        int loaderType = loader == InstallLoader.Qsl ? 5 : 4;
         List<InstallCatalogVersion> versions = [];
         HashSet<long> seen = [];
         for (int index = 0; index < 10000; index += 50)

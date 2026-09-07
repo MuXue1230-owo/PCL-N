@@ -6,6 +6,7 @@ internal static partial class Program
     [
         ("install catalog addon sources merge and isolate failures", InstallAddonSourcesMergeAndIsolateFailures),
         ("install catalog prefetch retains sibling results and cancellation", InstallPrefetchRetainsSiblingResultsAndCancellation),
+        ("install catalog validates OptiFine and OptiFabric published dependencies", InstallBuildCompatibilityUsesPublishedMetadata),
         ("install catalog parses all provider formats and compatibility boundaries", InstallCatalogParsesProviderContracts),
         ("install catalog rejects stale responses and distinguishes unsupported", InstallCatalogRejectsStaleResults),
         ("installed version families preserve legacy icon distinctions and inheritance", InstalledVersionKindsPreserveLegacyDistinctions),

@@ -3,6 +3,7 @@ using PCL.Services.Minecraft.Install;
 using PCL.Xsr.State;
 
 namespace PCL.Services.Tests;
+
 internal static partial class Program
 {
     private static async Task LiveInstallCatalogSmoke()
@@ -25,6 +26,62 @@ internal static partial class Program
             { Console.WriteLine($"LIVE ERROR: {loader}: {error.GetType().Name}: {error.Message}"); }
             finally { gate.Release(); }
         }));
+    }
+    private static async ValueTask InstallBuildCompatibilityUsesPublishedMetadata()
+    {
+        var versions = HttpInstallCatalogSource.ParseOptiFineCatalog("""
+            <tr><td>OptiFine_1.20.1_HD_U_I6.jar</td><td class='colForge'>Forge 47.2.18</td></tr>
+            <tr><td>OptiFine_1.20.1_HD_U_I5.jar</td><td class='colForge'>N/A</td></tr>
+            <tr><td>OptiFine_1.20.1_HD_U_I4.jar</td><td class='colForge'>#2847</td></tr>
+            OptiFine_1.20.1_HD_U_I3.jar
+            """, "1.20.1");
+        AssertEqual(4, versions.Count);
+        var opti = versions.Single(v => v.Id.EndsWith("I6", StringComparison.Ordinal));
+        AssertEqual("47.2.18", opti.ForgeRequirement);
+        AssertTrue(InstallCompatibility.MatchesForge(opti, "47.2.18"));
+        AssertTrue(!InstallCompatibility.MatchesForge(opti, "47.2.19"));
+        AssertTrue(InstallCompatibility.MatchesForge(versions[2], "14.23.5.2847"));
+        AssertTrue(!InstallCompatibility.MatchesForge(versions[1], "47.2.18"));
+        AssertTrue(!InstallCompatibility.MatchesForge(versions[3], "47.2.18"));
+        Dictionary<InstallLoader, InstallCatalogVersion> selected = new() { [InstallLoader.Forge] = new("47.2.19", "") };
+        AssertTrue(InstallCompatibility.BuildConflict(InstallLoader.OptiFine, opti, selected) is not null);
+        selected.Clear(); selected[InstallLoader.OptiFine] = opti;
+        AssertTrue(InstallCompatibility.BuildConflict(InstallLoader.Forge, new("47.2.19", ""), selected) is not null);
+        selected.Clear(); selected[InstallLoader.Fabric] = new("0.16.0", "");
+        AssertTrue(InstallCompatibility.BuildConflict(InstallLoader.OptiFine, opti, selected) is not null);
+        selected[InstallLoader.OptiFabric] = new("1.14.3", "", FabricRequirement: ">=0.8.0");
+        AssertTrue(InstallCompatibility.BuildConflict(InstallLoader.OptiFine, opti, selected) is null);
+        AssertTrue(InstallCompatibility.BuildConflict(InstallLoader.Fabric, new("0.7.0", ""), selected) is not null);
+        AssertTrue(InstallCompatibility.CanCombine(InstallLoader.Cleanroom, InstallLoader.OptiFine, "1.12.2"));
+        selected.Clear(); selected[InstallLoader.Cleanroom] = new("0.6.9-alpha", "");
+        AssertTrue(InstallCompatibility.BuildNotice(InstallLoader.OptiFine, opti, selected)!.Contains("崩溃", StringComparison.Ordinal));
+        using HttpClient http = new(new OptiFabricFixtureHandler());
+        var bridge = await new HttpInstallCatalogSource(http).GetLoadersAsync(InstallLoader.OptiFabric, "1.20.1", default);
+        AssertEqual(1, bridge.Count); AssertEqual("1.14.3", bridge[0].Id);
+        AssertEqual(">=0.8.0", bridge[0].FabricRequirement); AssertTrue(bridge[0].Warning is null);
+        AssertEqual(0, (await new HttpInstallCatalogSource(http).GetLoadersAsync(InstallLoader.OptiFabric, "1.20.2", default)).Count);
+    }
+    private sealed class OptiFabricFixtureHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken token)
+        {
+            HttpContent content;
+            if (request.RequestUri!.Host == "edge.forgecdn.net")
+            {
+                using MemoryStream memory = new();
+                using (var zip = new System.IO.Compression.ZipArchive(memory, System.IO.Compression.ZipArchiveMode.Create, true))
+                using (var writer = new StreamWriter(zip.CreateEntry("fabric.mod.json").Open()))
+                    writer.Write("""{"id":"optifabric","version":"1.14.3","depends":{"fabricloader":">=0.8.0","minecraft":["1.20.1"]}}""");
+                content = new ByteArrayContent(memory.ToArray());
+            }
+            else
+            {
+                AssertTrue(request.RequestUri.AbsolutePath.Contains("322385", StringComparison.Ordinal));
+                AssertTrue(request.RequestUri.Query.Contains("modLoaderType=4", StringComparison.Ordinal));
+                content = new StringContent("""{"data":[{"id":1,"fileName":"optifabric-1.14.3.jar","downloadUrl":"https://edge.forgecdn.net/file.jar","releaseType":1}]}""");
+            }
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+        }
     }
     private static async ValueTask InstallCatalogParsesProviderContracts()
     {

@@ -81,3 +81,37 @@ changes, while visible row realization remains bounded independently of total ca
 - Opt-in live provider smoke: Mojang and all nine base-loader endpoints return catalogs. Fabric API
   and QSL each return merged Modrinth/CurseForge download sources without partial-source warnings.
   Reproduce with `dotnet run --project tests/PCL.Services.Tests -- --live-install-catalog`.
+
+## Return-to-selection follow-up
+
+Returning to any catalog locates its selected row in the complete, currently applicable catalog
+before realizing the visible window. This applies to Minecraft, base loaders and addons, including
+results arriving after navigation. It stops previous inertia and centers the selection without
+replaying entry motion. Manual scrolling within the same page is not continuously overridden.
+
+## OptiFine / OptiFabric compatibility follow-up
+
+OptiFine's official download row is the source for its Forge compatibility field. `N/A` explicitly
+rejects Forge; a missing/unparseable field is unknown. Dotted Forge versions match exactly; historic
+`#build` entries match that build suffix. This is an allowlist of officially documented combinations,
+not a claim that every unlisted combination can never run. See https://optifine.net/downloads.
+
+OptiFabric (the official mod, CurseForge project 322385) is a Fabric-dependent slice, never a base
+loader or a similarly named Modrinth modpack. Its per-game files are queried through the existing
+CurseForge provider. Bounded JAR metadata reads verify the `optifabric` identity, Minecraft and Fabric
+Loader dependency predicates from `fabric.mod.json`; nothing is executed or extracted to disk.
+Selecting it exposes OptiFine alongside Fabric; removing Fabric or OptiFabric clears the dependent
+OptiFine combination. Fabric API remains independent. Version lists reject incompatible selections
+in both the UI projection and intent handler. OptiFabric requires a separate same-game OptiFine;
+metadata eligibility does not certify every runtime patch or third-party mod combination.
+Sources: https://www.curseforge.com/minecraft/mc-mods/optifabric and
+https://github.com/Chocohead/OptiFabric/blob/llama/src/main/resources/fabric.mod.json.
+
+### Cleanroom and OptiFine
+
+Minecraft 1.12.2 keeps Cleanroom + OptiFine reachable. This is partial compatibility,
+not a verified matrix: show an inline notice, including reported crashes in
+0.6.9-alpha / 0.6.10. Do not silently install OptiRefine or claim an unverified fix.
+Sources: https://cleanroommc.com/wiki/end-user-guide/preparing-your-modpack,
+https://github.com/CleanroomMC/Cleanroom/issues/600,
+https://github.com/Ecdcaeb/OptiRefine.

@@ -4,10 +4,10 @@ using PCL.Xsr.State;
 
 namespace PCL.Services.Minecraft.Install;
 
-public enum InstallLoader { Forge, Cleanroom, NeoForge, Fabric, LegacyFabric, Quilt, LabyMod, OptiFine, LiteLoader, FabricApi, Qsl }
+public enum InstallLoader { Forge, Cleanroom, NeoForge, Fabric, LegacyFabric, Quilt, LabyMod, OptiFine, LiteLoader, FabricApi, Qsl, OptiFabric }
 public sealed record InstallDownload(string Source, string FileName, Uri Url, string? Sha1, long Size);
 public sealed record InstallCatalogVersion(string Id, string Detail, bool Stable = true,
-    IReadOnlyList<InstallDownload>? Downloads = null, string? Warning = null);
+    IReadOnlyList<InstallDownload>? Downloads = null, string? Warning = null, string? ForgeRequirement = null, string? FabricRequirement = null);
 public sealed record InstallCatalogState(long Revision, string GameVersion, IReadOnlyList<InstallCatalogSnapshot> Catalogs);
 public sealed record InstallCatalogSnapshot(long Revision, string GameVersion, InstallLoader? Loader,
     IReadOnlyList<InstallCatalogVersion> Versions, bool Loading, string? Error = null, string? Unsupported = null);
@@ -25,7 +25,7 @@ public static class InstallCatalogRoutes
 }
 
 /// <summary>Pure legacy availability gates. Catalog metadata makes the final support decision.</summary>
-public static class InstallCompatibility
+public static partial class InstallCompatibility
 {
     public static string? UnavailableReason(InstallLoader loader, string game)
     {
@@ -52,11 +52,19 @@ public static class InstallCompatibility
             && Version.TryParse(numeric, out Version? quiltGame)) allowed = quiltGame >= new Version(1, 14, 4);
         return allowed ? null : $"{loader} 不支持 Minecraft {game}。";
     }
+    public static bool IsAddon(InstallLoader loader) => loader is InstallLoader.FabricApi or InstallLoader.Qsl or InstallLoader.OptiFabric;
     public static bool CanCombine(InstallLoader first, InstallLoader second, string game) => first == second
+        || first == InstallLoader.Fabric && second is InstallLoader.OptiFine or InstallLoader.FabricApi or InstallLoader.OptiFabric
+        || second == InstallLoader.Fabric && first is InstallLoader.OptiFine or InstallLoader.FabricApi or InstallLoader.OptiFabric
+        || first == InstallLoader.OptiFine && second is InstallLoader.OptiFabric or InstallLoader.FabricApi
+        || second == InstallLoader.OptiFine && first is InstallLoader.OptiFabric or InstallLoader.FabricApi
+        || first == InstallLoader.FabricApi && second == InstallLoader.OptiFabric
+        || second == InstallLoader.FabricApi && first == InstallLoader.OptiFabric
+        || first == InstallLoader.Quilt && second == InstallLoader.Qsl || second == InstallLoader.Quilt && first == InstallLoader.Qsl
         || first == InstallLoader.OptiFine && CanCombineWithOptiFine(second, game)
         || second == InstallLoader.OptiFine && CanCombineWithOptiFine(first, game);
     public static bool CanCombineWithOptiFine(InstallLoader loader, string game) =>
-        loader == InstallLoader.LiteLoader || loader == InstallLoader.Forge
+        loader == InstallLoader.Cleanroom && game == "1.12.2" || loader == InstallLoader.LiteLoader || loader == InstallLoader.Forge
         && (!Version.TryParse(game.Split('-', 2)[0], out Version? version)
             || version < new Version(1, 13) || version > new Version(1, 14, 3));
 }
@@ -108,7 +116,7 @@ public sealed class InstallCatalogService : IDisposable
             if (command.GameVersion.Length > 0)
                 foreach (InstallLoader loader in Enum.GetValues<InstallLoader>())
                 {
-                    InstallLoader baseLoader = loader switch { InstallLoader.FabricApi => InstallLoader.Fabric, InstallLoader.Qsl => InstallLoader.Quilt, _ => loader };
+                    InstallLoader baseLoader = loader switch { InstallLoader.FabricApi or InstallLoader.OptiFabric => InstallLoader.Fabric, InstallLoader.Qsl => InstallLoader.Quilt, _ => loader };
                     if (InstallCompatibility.UnavailableReason(baseLoader, command.GameVersion) is null)
                         tasks.Add(ReadAsync(new(command.GameVersion, loader), token));
                 }

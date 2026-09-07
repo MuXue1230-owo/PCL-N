@@ -18,6 +18,7 @@ public sealed partial class HttpInstallCatalogSource(HttpClient http, string? cu
     public async Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token)
     {
         if (InstallCompatibility.UnavailableReason(loader, game) is not null) return [];
+        if (loader == InstallLoader.OptiFabric) return await ReadOptiFabricAsync(game, token).ConfigureAwait(false);
         if (loader is InstallLoader.FabricApi or InstallLoader.Qsl)
             return await ReadMergedAddonAsync(loader, game, token).ConfigureAwait(false);
         if (loader is InstallLoader.Fabric or InstallLoader.LegacyFabric or InstallLoader.Quilt)
@@ -51,9 +52,7 @@ public sealed partial class HttpInstallCatalogSource(HttpClient http, string? cu
         if (loader == InstallLoader.OptiFine)
         {
             string html = await ReadAsync("https://optifine.net/downloads", token).ConfigureAwait(false);
-            return Array.AsReadOnly(OptiFineFiles().Matches(html).Select(m => m.Groups[1].Value)
-                .Where(v => v.StartsWith(game + "_", StringComparison.Ordinal)).Distinct(StringComparer.Ordinal)
-                .Select(v => new InstallCatalogVersion(v, "OptiFine", Stable(v))).ToArray());
+            return ParseOptiFineCatalog(html, game);
         }
         if (loader == InstallLoader.LiteLoader)
         {
