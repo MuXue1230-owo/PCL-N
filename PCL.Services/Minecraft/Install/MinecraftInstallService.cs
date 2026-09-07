@@ -152,7 +152,9 @@ public sealed class MinecraftInstallService : IDisposable
             loaderJson["inheritsFrom"] = game;
         }
 
-        task.Report(StagePlan[0], "版本信息就绪", 1, 0, 0, 0);
+        // A stage boundary is not the whole task: reporting 1 here made the card flash 100%
+        // before the first transfer dropped it back near zero.
+        task.Report(StagePlan[0], "版本信息就绪", 0.02, 0, 0, 0);
 
         // ── Plan every transfer once so file counts and the byte budget are known upfront.
         MinecraftLaunchPlatform platform = MinecraftLaunchPlatform.Detect();

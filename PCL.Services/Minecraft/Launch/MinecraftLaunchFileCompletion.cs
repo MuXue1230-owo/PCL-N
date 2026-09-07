@@ -192,16 +192,21 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
 
             done++;
             double fraction = missing.Count == 0 ? 1d : done / (double)missing.Count;
+            // ProgressAt divides by Total — publishing the raw weight would clamp everything
+            // past 1.0 and the card would flash 100% mid-repair before the next heartbeat
+            // pulled it back down.
             progress?.Report(new MinecraftLaunchStageReport(
                 MinecraftLaunchStages.CompleteFiles,
-                MinecraftLaunchStages.LoginWeight
-                    + (MinecraftLaunchStages.CompleteFilesWeight * Math.Clamp(fraction, 0d, 1d)),
+                MinecraftLaunchStages.ProgressAt(
+                    MinecraftLaunchStages.LoginWeight
+                        + (MinecraftLaunchStages.CompleteFilesWeight * Math.Clamp(fraction, 0d, 1d))),
                 Method: method));
         }
 
         progress?.Report(new MinecraftLaunchStageReport(
             MinecraftLaunchStages.CompleteFiles,
-            MinecraftLaunchStages.LoginWeight + MinecraftLaunchStages.CompleteFilesWeight,
+            MinecraftLaunchStages.ProgressAt(
+                MinecraftLaunchStages.LoginWeight + MinecraftLaunchStages.CompleteFilesWeight),
             Method: method));
     }
 

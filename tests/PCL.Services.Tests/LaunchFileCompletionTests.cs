@@ -13,20 +13,35 @@ namespace PCL.Services.Tests;
 // libraries. A missing library used to kill the JVM before its window appeared.
 internal static partial class Program
 {
+    private sealed class CompletionProgressRecorder(XsrStateStore store)
+        : MinecraftLaunchProgressPublisher(store)
+    {
+        public List<double> Reports { get; } = [];
+
+        public override void Report(MinecraftLaunchStageReport report)
+        {
+            Reports.Add(report.Progress);
+            base.Report(report);
+        }
+    }
+
     private sealed class CompletionFixture : IDisposable
     {
         public XsrStateStore Store;
         public DownloadService Downloads;
         public MinecraftLaunchFileCompletion Completion;
         public List<string> RequestedUrls = [];
+        public CompletionProgressRecorder? Progress;
         public string Root;
 
         public CompletionFixture()
         {
             XsrStateStoreBuilder builder = new();
             DownloadService.DeclareState(builder);
+            MinecraftLaunchProgressState.DeclareState(builder);
             Store = builder.Build();
             Downloads = new(Store);
+            Progress = new CompletionProgressRecorder(Store);
             Root = Path.Combine(Path.GetTempPath(), "nexa-completion-tests", Guid.NewGuid().ToString("N"));
             Completion = new(
                 Downloads,
@@ -137,8 +152,25 @@ internal static partial class Program
                 Is64BitArchitecture: true,
                 IsArm64Architecture: false),
             method: "offline",
-            progress: null,
+            progress: fixture.Progress,
             CancellationToken.None);
+
+        // The repair reports stay inside the complete_files band and never regress: raw
+        // weights would clamp past 1.0 and flash 100% mid-repair (real-device report).
+        double stageCeiling = MinecraftLaunchStages.ProgressAt(
+            MinecraftLaunchStages.LoginWeight + MinecraftLaunchStages.CompleteFilesWeight);
+        List<double> reports = fixture.Progress!.Reports;
+        AssertTrue(reports.Count > 0);
+        foreach (double progress in reports)
+        {
+            AssertTrue(progress <= stageCeiling + 0.0001, $"progress {progress:P1} exceeded the stage ceiling");
+        }
+
+        for (int index = 1; index < reports.Count; index++)
+        {
+            AssertTrue(reports[index] >= reports[index - 1] - 0.0001,
+                $"progress regressed from {reports[index - 1]:P1} to {reports[index]:P1}");
+        }
 
         string missingJar = Path.Combine(
             fixture.Root, "libraries", "com", "example", "missing", "1.0.0", "missing-1.0.0.jar");
