@@ -252,6 +252,8 @@ public sealed class TaskCenterService
             State = state,
             Detail = detail,
             ErrorMessage = error,
+            // Finished reads as fully complete; canceled keeps the progress it reached.
+            Progress = state == TaskCenterEntryState.Finished ? 1d : entry.Progress,
             SpeedBytesPerSecond = 0,
             Steps = entry.Steps is { } steps ? TaskStagePlanner.Advance(steps, "完成", detail, 1d) : null,
         };

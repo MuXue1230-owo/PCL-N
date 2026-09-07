@@ -103,20 +103,12 @@ internal static partial class Program
         AssertEqual(TaskCenterEntryState.Failed, entry.State);
         AssertEqual("任务意外结束。", entry.ErrorMessage);
 
-        bool duplicate = false;
-        try
-        {
-            service.Begin(new TaskCenterStart("install:4", "安装", []));
-        }
-        catch (InvalidOperationException)
-        {
-            duplicate = true;
-        }
-
-        AssertTrue(duplicate, "duplicate live id rejected");
-        // After the abandoned registration is released the id can be reused.
-        using ITaskCenterTask reused = service.Begin(new TaskCenterStart("install:5", "安装", []));
-        AssertEqual(2, store.ReadCollection<TaskCenterEntry>(entries).Items.Count);
+        // The abandoned registration released its id: reuse replaces the failed card with a
+        // fresh running one under the same id (one card, not two).
+        using ITaskCenterTask reused = service.Begin(new TaskCenterStart("install:4", "安装", []));
+        TaskCenterEntry reentered = store.ReadCollection<TaskCenterEntry>(entries).Items.Single();
+        AssertEqual(TaskCenterEntryState.Running, reentered.State);
+        AssertEqual(null, reentered.ErrorMessage);
         return ValueTask.CompletedTask;
     }
 
