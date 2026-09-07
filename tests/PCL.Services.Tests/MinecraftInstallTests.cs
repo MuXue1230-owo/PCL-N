@@ -1,8 +1,6 @@
-using System.Text;
 using System.Text.Json.Nodes;
 using PCL.Services.Downloads;
 using PCL.Services.Minecraft;
-using PCL.Services.Minecraft.Assets;
 using PCL.Services.Minecraft.Install;
 using PCL.Services.Tasks;
 using PCL.Xsr;
@@ -11,9 +9,9 @@ using PCL.Xsr.State;
 namespace PCL.Services.Tests;
 
 // XSR-724: the real install pipeline — version documents written before transfer, the shared
-// download planners feeding one task-center task with file-accurate progress, bmclapi-source
-// failover ordering, processor-based loaders rejected up front, and the Installed event that
-// grows the version library. Everything runs against in-memory metadata and connection fakes.
+// download planners feeding one task-center task with file-accurate progress, processor-based
+// loaders rejected up front, and the Installed event that grows the version library.
+// Everything runs against in-memory metadata and connection fakes — no network.
 internal static partial class Program
 {
     private sealed class FakeMetadata : IMinecraftInstallMetadataSource
@@ -40,7 +38,9 @@ internal static partial class Program
         public ValueTask<DownloadConnectionInfo> StartAsync(
             long beginOffset, CancellationToken cancellationToken = default)
         {
-            long remaining = beginOffset > 0 && beginOffset <= payload.Length ? payload.Length - beginOffset : payload.Length;
+            long remaining = beginOffset > 0 && beginOffset <= payload.Length
+                ? payload.Length - beginOffset
+                : payload.Length;
             return ValueTask.FromResult(new DownloadConnectionInfo(remaining, beginOffset, payload.Length - 1, false));
         }
 
@@ -71,6 +71,33 @@ internal static partial class Program
                 new InstallCatalogVersion("1.0.0", loader.ToString(), true,
                     Downloads: [new InstallDownload(loader.ToString(), $"{loader}.jar", new Uri(addonFileUrl), null, 4)]),
             ]);
+    }
+
+    private sealed class InstallFixture : IDisposable
+    {
+        public XsrStateStore Store;
+        public TaskCenterService Tasks;
+        public MinecraftInstallService Install;
+        public List<string> InstalledRoots = [];
+
+        public InstallFixture(FakeMetadata metadata, IInstallCatalogSource? catalog = null)
+        {
+            XsrStateStoreBuilder builder = new();
+            TaskCenterStateContract.DeclareState(builder);
+            DownloadService.DeclareState(builder);
+            Store = builder.Build();
+            Tasks = new TaskCenterService(Store);
+            DownloadService downloads = new(Store);
+            Install = new MinecraftInstallService(
+                Tasks, downloads, catalog, metadata: metadata,
+                connectionFactory: source => new ServingConnection(PayloadFor(source)));
+            Install.Installed += root => InstalledRoots.Add(root);
+        }
+
+        public TaskCenterEntry Entry() => Store.ReadCollection<TaskCenterEntry>(
+            Store.Resolve(TaskCenterStateContract.EntriesKey)).Items.Single();
+
+        public void Dispose() => Install.Dispose();
     }
 
     private static JsonObject VanillaJson() => JsonNode.Parse("""
@@ -119,36 +146,9 @@ internal static partial class Program
 
     private static byte[] PayloadFor(string url) => url.Contains("/client/") || url.Contains("library")
         ? "JARCONTENT"u8.ToArray()
-        : url.Contains("resources.download") || url.Contains("bmclapi2") && url.Contains("/assets/")
+        : url.Contains("resources.download") || (url.Contains("bmclapi2") && url.Contains("/assets/"))
             ? "ASSET!"u8.ToArray()
             : "MODJAR!"u8.ToArray();
-
-    private sealed class InstallFixture : IDisposable
-    {
-        public XsrStateStore Store;
-        public TaskCenterService Tasks;
-        public MinecraftInstallService Install;
-        public List<string> InstalledRoots = [];
-
-        public InstallFixture(FakeMetadata metadata, IInstallCatalogSource? catalog = null)
-        {
-            XsrStateStoreBuilder builder = new();
-            TaskCenterStateContract.DeclareState(builder);
-            DownloadService.DeclareState(builder);
-            Store = builder.Build();
-            Tasks = new TaskCenterService(Store);
-            DownloadService downloads = new(Store);
-            Install = new MinecraftInstallService(
-                Tasks, downloads, catalog, metadata: metadata,
-                connectionFactory: source => new ServingConnection(PayloadFor(source)));
-            Install.Installed += root => InstalledRoots.Add(root);
-        }
-
-        public TaskCenterEntry Entry() => Store.ReadCollection<TaskCenterEntry>(
-            Store.Resolve(TaskCenterStateContract.EntriesKey)).Items.Single();
-
-        public void Dispose() => Install.Dispose();
-    }
 
     private static async ValueTask InstallRunsTheRealPipelineIntoTheVersionLibrary()
     {
@@ -157,32 +157,34 @@ internal static partial class Program
         string root = Path.Combine(Path.GetTempPath(), "nexa-install-tests", Guid.NewGuid().ToString("N"));
         try
         {
-            XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(new MinecraftInstallCommand(
-                root, "1.20.1",
-                Loader: InstallLoader.Fabric, LoaderBuild: "0.16.9",
-                Addons: [new MinecraftInstallAddon(InstallLoader.FabricApi, "1.0.0")]));
+            XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(
+                new MinecraftInstallCommand(
+                    root, "1.20.1",
+                    Loader: InstallLoader.Fabric, LoaderBuild: "0.16.9",
+                    Addons: [new MinecraftInstallAddon(InstallLoader.FabricApi, "1.0.0")]));
             AssertTrue(result.IsSuccess);
 
             // Both version documents exist before any transfer; the loader one carries identity.
-            string vanilla = await File.ReadAllTextAsync(Path.Combine(root, "versions", "1.20.1", "1.20.1.json"));
+            string vanilla = await File.ReadAllTextAsync(
+                Path.Combine(root, "versions", "1.20.1", "1.20.1.json"));
             AssertTrue(vanilla.Contains("\"1.20.1\"", StringComparison.Ordinal));
             string loader = await File.ReadAllTextAsync(
-                Path.Combine(root, "versions", "1.20.1-fabric0.16.9"));
+                Path.Combine(root, "versions", "1.20.1-fabric0.16.9", "1.20.1-fabric0.16.9.json"));
             AssertTrue(loader.Contains("\"inheritsFrom\": \"1.20.1\"", StringComparison.Ordinal));
 
             // Client jar, library, asset, asset index, and the addon jar all landed.
-            AssertTrue(File.Exists(Path.Combine(root, "versions", "1.20.1")));
+            AssertTrue(File.Exists(Path.Combine(root, "versions", "1.20.1", "1.20.1.jar")));
             AssertTrue(File.Exists(Path.Combine(
-                root, "libraries", "com", "example", "library", "1.0.0")));
+                root, "libraries", "com", "example", "library", "1.0.0", "library-1.0.0.jar")));
             string assetHash = new string('d', 40);
             AssertTrue(File.Exists(Path.Combine(root, "assets", "objects", assetHash[..2], assetHash)));
-            AssertTrue(File.Exists(Path.Combine(root, "assets", "indexes")));
-            AssertTrue(File.Exists(Path.Combine(root, "mods")));
+            AssertTrue(File.Exists(Path.Combine(root, "assets", "indexes", "5.json")));
+            AssertTrue(File.Exists(Path.Combine(root, "mods", "FabricApi.jar")));
 
             AssertEqual(1, fixture.InstalledRoots.Count);
             AssertTrue(MinecraftLibraryService.PathComparer.Equals(fixture.InstalledRoots[0], root));
 
-            // The run reads as one finished task with a byte-accurate file count.
+            // The run reads as one finished task with a file-accurate count.
             TaskCenterEntry entry = fixture.Entry();
             AssertEqual(TaskCenterEntryState.Finished, entry.State);
             AssertTrue(entry.TotalFiles > 0 && entry.CompletedFiles == entry.TotalFiles);
@@ -205,8 +207,8 @@ internal static partial class Program
         string root = Path.Combine(Path.GetTempPath(), "nexa-install-tests", Guid.NewGuid().ToString("N"));
         try
         {
-            XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(new MinecraftInstallCommand(
-                root, "1.20.1", Loader: InstallLoader.Forge, LoaderBuild: "47.2.0"));
+            XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(
+                new MinecraftInstallCommand(root, "1.20.1", Loader: InstallLoader.Forge, LoaderBuild: "47.2.0"));
             AssertFalse(result.IsSuccess);
             AssertFalse(Directory.Exists(root));
             AssertEqual(0, fixture.InstalledRoots.Count);
