@@ -40,6 +40,7 @@ public static class FoundationState
         MinecraftProcessStateComposition.DeclareState(builder);
         Minecraft.Launch.MinecraftLaunchProgressState.DeclareState(builder);
         Minecraft.MinecraftLibraryService.DeclareState(builder);
+        Minecraft.Install.InstallCatalogService.DeclareState(builder);
         return builder;
     }
 }

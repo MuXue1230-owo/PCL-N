@@ -1,0 +1,24 @@
+using PCL.Services.Foundation;
+using PCL.Services.Minecraft.Install;
+using PCL.Xsr.Runtime;
+
+namespace PCL.Services.Composition;
+
+public sealed class InstallCatalogRuntime(InstallCatalogService service, XsrCommandRouter commands, HttpClient? ownedHttp) : IDisposable
+{
+    public XsrCommandRouter Commands { get; } = commands;
+    public void Dispose() { service.Dispose(); ownedHttp?.Dispose(); }
+}
+public static class InstallCatalogRuntimeComposer
+{
+    public static InstallCatalogRuntime Compose(FoundationHost host, IInstallCatalogSource? source = null, IXsrDispatchObserver? observer = null)
+    {
+        HttpClient? http = source is null ? new HttpClient() : null;
+        InstallCatalogService service = new(host.StateStore, source ?? new HttpInstallCatalogSource(http!));
+        XsrCommandRouterBuilder commands = new();
+        commands.Register<InstallCatalogReadCommand>(InstallCatalogRoutes.Read, async (command, token) => await service.ReadAsync(command, token).ConfigureAwait(false));
+        commands.Register<InstallCatalogPrefetchCommand>(InstallCatalogRoutes.Prefetch, async (command, token) => await service.PrefetchAsync(command, token).ConfigureAwait(false));
+        return new(service, commands.Build(observer ?? new Observer()), http);
+    }
+    private sealed class Observer : IXsrDispatchObserver { public void OnCompleted(XsrDispatchObservation observation) { } }
+}

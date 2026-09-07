@@ -4,6 +4,10 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("install catalog addon sources merge and isolate failures", InstallAddonSourcesMergeAndIsolateFailures),
+        ("install catalog prefetch retains sibling results and cancellation", InstallPrefetchRetainsSiblingResultsAndCancellation),
+        ("install catalog parses all provider formats and compatibility boundaries", InstallCatalogParsesProviderContracts),
+        ("install catalog rejects stale responses and distinguishes unsupported", InstallCatalogRejectsStaleResults),
         ("installed version families preserve legacy icon distinctions and inheritance", InstalledVersionKindsPreserveLegacyDistinctions),
         ("library selections retain directory identity and survive restart", LibraryRemembersDirectoryQualifiedSelection),
         ("library rejects stale scans and preserves newer selections", LibraryRejectsStaleScansAndPreservesLiveSelection),
@@ -251,6 +255,7 @@ internal static partial class Program
 
     private static async Task<int> Main(string[] args)
     {
+        if (args.Contains("--live-install-catalog")) { await LiveInstallCatalogSmoke(); return 0; }
         foreach ((string name, Func<ValueTask> body) in TestCases)
         {
             if (args is { Length: > 0 } && !args.Any(arg => name.Contains(arg, StringComparison.OrdinalIgnoreCase)))
