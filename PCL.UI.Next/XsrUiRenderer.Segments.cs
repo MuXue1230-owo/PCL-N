@@ -1,4 +1,5 @@
 namespace PCL.UI.Next;
+
 public sealed partial class XsrUiRenderer
 {
     private XsrUiEntityId _segmentDrag;

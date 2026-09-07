@@ -54,7 +54,7 @@ internal static partial class Program
         [DllImport("ole32.dll")] internal static extern void CoUninitialize();
         [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
         internal static extern nint CreateWindowExW(uint extended, string cls, string title, uint style, int x, int y, int width, int height, nint parent, nint menu, nint instance, nint param);
-        [DllImport("user32.dll")] [return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyWindow(nint window);
+        [DllImport("user32.dll")][return: MarshalAs(UnmanagedType.Bool)] internal static extern bool DestroyWindow(nint window);
         [DllImport("shell32.dll")] internal static extern int SHGetPropertyStoreForWindow(nint window, ref Guid iid, out nint pointer);
         [DllImport("ole32.dll")] internal static extern int PropVariantClear(ref MinecraftWindowIntegration.PropVariant value);
     }

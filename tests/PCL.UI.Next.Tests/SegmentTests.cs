@@ -1,6 +1,7 @@
 using PCL.Xsr;
 using PCL.Xsr.State;
 namespace PCL.UI.Next.Tests;
+
 internal static partial class Program
 {
     private sealed class SegmentSink(XsrUiSegmentedTrack track) : IXsrUiIntentSink

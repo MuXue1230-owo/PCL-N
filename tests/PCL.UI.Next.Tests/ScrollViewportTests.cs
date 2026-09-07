@@ -13,8 +13,11 @@ internal static partial class Program
         tree.SetComponent(root, new XsrUiStackPanel(direction));
         XsrUiScroll scroll = new() { ShowsVerticalIndicator = true };
         tree.SetComponent(root, scroll);
-        tree.SetComponent(child, new XsrUiElement { Weight = direction == XsrUiOrientation.Horizontal ? 1 : 0,
-            Height = !wraps && direction == XsrUiOrientation.Vertical ? 20 : null });
+        tree.SetComponent(child, new XsrUiElement
+        {
+            Weight = direction == XsrUiOrientation.Horizontal ? 1 : 0,
+            Height = !wraps && direction == XsrUiOrientation.Vertical ? 20 : null
+        });
         if (wraps)
         {
             tree.SetComponent(child, new XsrUiText(new string('x', 84)) { MaxLines = 10 });

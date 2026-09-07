@@ -172,3 +172,6 @@ jobs:
           -p:PublishTrimmed=true
           -p:TrimMode=link
           --output "${{ runner.temp }}/pcl-desktop-trimmed"
+
+      - name: Run trimmed Desktop shell smoke
+        run: '"${{ runner.temp }}/pcl-desktop-trimmed/PCL.Desktop" --validate-shell'
