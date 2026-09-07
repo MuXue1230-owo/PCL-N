@@ -65,8 +65,10 @@ internal sealed partial class LaunchPageController : IDisposable
     private static readonly XsrSemanticId InstallVersion1211Command = XsrSemanticId.Parse("ui.install.version.1.21.1");
     private static readonly XsrSemanticId InstallVersion1206Command = XsrSemanticId.Parse("ui.install.version.1.20.6");
     private static readonly XsrSemanticId InstallVersion1201Command = XsrSemanticId.Parse("ui.install.version.1.20.1");
-    private static readonly XsrSemanticId InstallLoaderVanillaCommand = XsrSemanticId.Parse("ui.install.loader.vanilla");
     private static readonly XsrSemanticId InstallLoaderFabricCommand = XsrSemanticId.Parse("ui.install.loader.fabric");
+    // No visible button emits this any more, but the catalog flow keeps it as the explicit
+    // "back to vanilla" selection reset (version picks and tests still drive it).
+    private static readonly XsrSemanticId InstallLoaderVanillaCommand = XsrSemanticId.Parse("ui.install.loader.vanilla");
     private static readonly XsrSemanticId InstallLoaderForgeCommand = XsrSemanticId.Parse("ui.install.loader.forge");
     private static readonly XsrSemanticId InstallLoaderNeoForgeCommand = XsrSemanticId.Parse("ui.install.loader.neoforge");
     private static readonly XsrSemanticId InstallLoaderQuiltCommand = XsrSemanticId.Parse("ui.install.loader.quilt");
@@ -121,7 +123,7 @@ internal sealed partial class LaunchPageController : IDisposable
 
     private static readonly string[] JavaInstallLoaderKeys =
     [
-        "JavaLoaderVanilla", "JavaLoaderForge", "JavaLoaderCleanroom", "JavaLoaderNeoForge", "JavaLoaderFabric",
+        "JavaLoaderForge", "JavaLoaderCleanroom", "JavaLoaderNeoForge", "JavaLoaderFabric",
         "JavaLoaderLegacyFabric", "JavaLoaderQuilt", "JavaLoaderLabyMod", "JavaLoaderOptiFine", "JavaLoaderLiteLoader",
     ];
 
@@ -453,13 +455,13 @@ internal sealed partial class LaunchPageController : IDisposable
         {
             SelectInstallVersion("1.20.1", "JavaVersion1201");
         }
-        else if (command == InstallLoaderVanillaCommand)
-        {
-            SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
-        }
         else if (command == InstallLoaderFabricCommand)
         {
             SelectInstallLoader("Fabric", "JavaLoaderFabric");
+        }
+        else if (command == InstallLoaderVanillaCommand)
+        {
+            SelectInstallLoader("原版 Minecraft", string.Empty);
         }
         else if (command == InstallLoaderForgeCommand)
         {
@@ -885,7 +887,7 @@ internal sealed partial class LaunchPageController : IDisposable
         StyleInstallChoices(
             entities,
             JavaInstallLoaderKeys,
-            "JavaLoaderVanilla",
+            string.Empty,
             InstallJavaTint,
             InstallJavaAccent);
         return (page, entities);

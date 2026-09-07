@@ -207,7 +207,12 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
     /// band. ProgressAt divides by Total — publishing raw weights would clamp past 1.0 and
     /// flash 100% mid-repair.
     /// </summary>
-    private static void ReportProgress(
+    // Per-chunk callbacks arrive at line speed; one publish per chunk floods the render
+    // thread on fast links. Reports step by at least this fraction of the repair.
+    private const double ReportStep = 0.002d;
+    private double _lastReportedFraction = -1d;
+
+    private void ReportProgress(
         MinecraftLaunchProgressPublisher? progress,
         string method,
         int filesDone,
@@ -225,6 +230,12 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
         double fraction = totalFiles == 0
             ? 1d
             : Math.Clamp((filesDone + intra) / totalFiles, 0d, 1d);
+        if (fraction - _lastReportedFraction < ReportStep && fraction < 1d)
+        {
+            return;
+        }
+
+        _lastReportedFraction = fraction;
         progress.Report(new MinecraftLaunchStageReport(
             MinecraftLaunchStages.CompleteFiles,
             MinecraftLaunchStages.ProgressAt(

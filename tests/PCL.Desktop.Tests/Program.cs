@@ -90,6 +90,7 @@ internal static partial class Program
         ("skin route publishes media through host state into the rendered profile", SkinRoutePublishesIntoRenderedProfile),
         ("delete actions persist only the requested profile and reject stale rows", DeleteActionsPersistAndRejectStaleRows),
         ("trivia rotates every three seconds without foreign tree writes and stops on disposal", TriviaTimerPublishesOnlyStateAndStops),
+        ("install failure leaves the idle tree clean", InstallFailureLeavesTheIdleTreeClean),
         ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
         ("task bubble fills up from the bottom edge with aggregated progress", TaskBubbleFillsUpFromTheBottomEdge),
         ("task center page reconciles cards and routes cancel dismiss and clear", TaskCenterPageReconcilesCardsAndRoutesActions),
@@ -552,6 +553,50 @@ internal static partial class Program
 
     private static string ReadCell(XsrStateStore store, XsrSemanticId key) =>
         (string?)store.ReadAppliedValue(store.Resolve(key)) ?? string.Empty;
+
+    private sealed class FailingInstallMetadata : PCL.Services.Minecraft.Install.IMinecraftInstallMetadataSource
+    {
+        public Task<System.Text.Json.Nodes.JsonObject> FetchVanillaVersionJsonAsync(
+            string gameVersion, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("simulated metadata outage");
+
+        public Task<System.Text.Json.Nodes.JsonObject> FetchLoaderProfileJsonAsync(
+            PCL.Services.Minecraft.Install.InstallLoader loader, string gameVersion, string build,
+            CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("simulated metadata outage");
+
+        public Task<System.Text.Json.Nodes.JsonObject> FetchAssetIndexJsonAsync(
+            string indexUrl, CancellationToken cancellationToken) =>
+            throw new InvalidOperationException("simulated metadata outage");
+    }
+
+    private static void InstallFailureLeavesTheIdleTreeClean()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        using TaskCenterRuntime taskCenter = TaskCenterRuntimeComposer.Compose(fixture.Foundation.Host);
+        using TaskCenterController controller = new(
+            fixture.Shell, fixture.Intents, taskCenter.Commands, fixture.Store, bubble);
+        using PCL.Services.Minecraft.Install.MinecraftInstallService install = new(
+            fixture.Foundation.Host.Tasks,
+            fixture.Foundation.Host.Downloads,
+            metadata: new FailingInstallMetadata());
+        string root = Path.Combine(fixture.TemporaryDirectory, "failed-install");
+
+        XsrResult<PCL.Services.Minecraft.Install.MinecraftInstallResult> result = install.InstallAsync(
+            new PCL.Services.Minecraft.Install.MinecraftInstallCommand(root, "1.20.1"))
+            .GetAwaiter().GetResult();
+        AssertFalse(result.IsSuccess);
+
+        // A failure must not leave a per-frame dirty writer behind: with no state changes,
+        // the second render returns the cached scene (reference-equal). A spin would rebuild
+        // it every frame — the class of freeze reported after install failures.
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+        XsrUiScene first = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        XsrUiScene second = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(ReferenceEquals(first, second));
+    }
 
     private static void TaskBubbleFollowsSummaryAndYieldsToPage()
     {

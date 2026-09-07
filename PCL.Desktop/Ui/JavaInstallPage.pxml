@@ -31,8 +31,6 @@
           <Text Key="JavaMinecraftPageTitle" Content="Minecraft" Height="28" IsVisible="false" />
 
           <StackPanel Key="JavaMinecraftVersions" Orientation="Vertical" Spacing="2" Padding="8" />
-          <Button Key="JavaLoaderVanilla" Label="选择原版 Minecraft" Content="使用原版 Minecraft"
-                  Command="ui.install.loader.vanilla" Height="36" VerticalAlignment="Center" Width="180" HorizontalAlignment="Start" />
         </StackPanel>
 
         <StackPanel Key="JavaForgePage" Label="Forge 安装选项" Orientation="Vertical" Spacing="12" Padding="0,4,0,0">

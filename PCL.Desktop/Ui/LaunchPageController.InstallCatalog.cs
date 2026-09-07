@@ -24,7 +24,7 @@ internal sealed partial class LaunchPageController
         _installGameChosen = true;
         _selectedInstallVersion = version;
         _selectedInstallBuilds.Clear();
-        SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
+        SelectInstallLoader("原版 Minecraft", string.Empty);
         UpdateJavaInstallSubpageVisibility();
         PrefetchInstallCatalog(version);
         _locateCatalogSelection = true;
@@ -144,14 +144,14 @@ internal sealed partial class LaunchPageController
                 _installGameChosen = false;
                 PrefetchInstallCatalog("");
                 _selectedInstallBuilds.Clear();
-                SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
+                SelectInstallLoader("原版 Minecraft", string.Empty);
                 _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], "");
                 _catalogRevision = -1;
                 return true;
             }
             ChooseInstallGame(version.Id);
             _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], version.Id);
-            SelectInstallLoader("原版 Minecraft", "JavaLoaderVanilla");
+            SelectInstallLoader("原版 Minecraft", string.Empty);
         }
         else
         {

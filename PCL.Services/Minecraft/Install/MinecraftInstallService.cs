@@ -367,6 +367,9 @@ public sealed class MinecraftInstallService : IDisposable
     }
 
     private static readonly TimeSpan FileRetryDelay = TimeSpan.FromSeconds(3);
+    // Per-chunk callbacks arrive at line speed; one publish per chunk floods the render
+    // thread on fast links. Reports step by at least this fraction of the whole install.
+    private const double ReportStep = 0.002d;
 
     private Task<DownloadTransferResult> DownloadPlannedFileAsync(
         DownloadRequest request,
@@ -375,8 +378,10 @@ public sealed class MinecraftInstallService : IDisposable
         string stageLabel,
         int doneFiles,
         int totalFiles,
-        CancellationToken token) =>
-        _downloads.DownloadAsync(
+        CancellationToken token)
+    {
+        double lastReported = -1d;
+        return _downloads.DownloadAsync(
             request,
             progress =>
             {
@@ -385,6 +390,12 @@ public sealed class MinecraftInstallService : IDisposable
                     : (doneFiles + (progress.TotalBytes > 0
                           ? Math.Clamp(progress.DownloadedBytes / (double)progress.TotalBytes, 0d, 1d)
                           : 0d)) / totalFiles;
+                if (overall - lastReported < ReportStep && overall < 0.999d)
+                {
+                    return;
+                }
+
+                lastReported = overall;
                 task.Report(
                     stage,
                     stageLabel,
@@ -394,6 +405,7 @@ public sealed class MinecraftInstallService : IDisposable
                     progress.BytesPerSecond);
             },
             token);
+    }
 
     private static IEnumerable<PlannedFile> LibraryFiles(IReadOnlyList<MinecraftLibraryToken> libraries, string root)
     {
