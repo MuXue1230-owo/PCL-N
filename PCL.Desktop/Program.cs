@@ -210,7 +210,8 @@ internal static class Program
             launcherVersion: buildInfo.SemanticVersion,
             gameWindowAppeared: pid => MinecraftWindowIntegration.DetachGameWindows(
                 pid,
-                "PCL-Nexa.Minecraft." + pid.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+                "PCL-Nexa.Minecraft." + pid.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                message => host.Logging.Warn("Launch", message)));
         host.Logging.Debug(
             "Launcher",
             $"Runtime composition completed services={runtime.Host.Services.Count} "

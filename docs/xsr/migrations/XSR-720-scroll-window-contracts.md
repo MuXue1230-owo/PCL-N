@@ -19,3 +19,19 @@ The Windows NativeAOT test enumerates a real off-screen test window, assigns its
 and reads the property back through the generated interface. Both Windows CI architectures
 run this test before packaging. Source-generated interop follows the
 [Microsoft COM source-generation contract](https://learn.microsoft.com/en-us/dotnet/standard/native-interop/comwrappers-source-generation).
+
+## Failure diagnostics and remaining lifetime constraint
+
+Property-store acquisition/SetValue/Commit failures are now returned from the native callback
+and logged after EnumWindows returns, including PID, HWND and HRESULT. Enumeration failure is
+also reported. Logging stays outside the unmanaged callback boundary; the coordinator retains
+its nonfatal host-decoration guard. The native smoke test exercises an invalid HWND as well
+as the normal write/read path and clears its own test property before destroying its window.
+
+Production close-before-cleanup remains unresolved: the launcher does not own the Java window
+procedure or receive a guaranteed pre-destruction callback. An out-of-context destroy hook or
+process-exit notification is too late to promise VT_EMPTY before closure. A window-owner
+cooperation contract is required before claiming this fixed; no late write to a potentially
+recycled HWND is introduced. See Microsoft's
+[window property-store lifetime requirement](https://learn.microsoft.com/en-us/windows/win32/api/shellapi/nf-shellapi-shgetpropertystoreforwindow)
+and [destroy-event semantics](https://learn.microsoft.com/en-us/windows/win32/winauto/event-constants).

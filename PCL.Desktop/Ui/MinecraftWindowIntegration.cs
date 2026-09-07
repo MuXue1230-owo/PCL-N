@@ -17,20 +17,21 @@ internal static partial class MinecraftWindowIntegration
     /// never groups them with the launcher. The property is written through the shell
     /// property store scoped to each game window, so the game keeps its own icon.
     /// </summary>
-    public static void DetachGameWindows(int processId, string appId)
+    public static void DetachGameWindows(int processId, string appId, Action<string>? warn = null)
     {
         if (!OperatingSystem.IsWindows())
         {
             return;
         }
 
-        DetachGameWindowsWindows(processId, appId);
+        DetachGameWindowsWindows(processId, appId, warn);
     }
 
     [SupportedOSPlatform("windows")]
-    private static void DetachGameWindowsWindows(int processId, string appId)
+    private static void DetachGameWindowsWindows(int processId, string appId, Action<string>? warn)
     {
-        _ = EnumWindows((window, lParam) =>
+        List<string> failures = [];
+        bool enumerated = EnumWindows((window, lParam) =>
         {
             _ = GameWindowOwnerPid(window, out uint owner);
             if (owner != (uint)processId || !IsWindowVisible(window) || GetWindowTextLength(window) == 0)
@@ -38,21 +39,24 @@ internal static partial class MinecraftWindowIntegration
                 return true;
             }
 
-            ApplyAppUserModelId(window, appId);
+            if (ApplyAppUserModelId(window, appId) is { } failure)
+                failures.Add($"AUMID write failed pid={processId} hwnd=0x{window:X} hr=0x{failure.HResult:X8}: {failure.Message}");
             return true;
         }, nint.Zero);
+        if (!enumerated)
+            failures.Add($"Game window enumeration failed pid={processId} win32={Marshal.GetLastWin32Error()}");
+        // Never call host code across the unmanaged EnumWindows callback boundary.
+        foreach (string failure in failures) warn?.Invoke(failure);
     }
 
     [SupportedOSPlatform("windows")]
-    private static void ApplyAppUserModelId(nint window, string appId)
+    internal static Exception? ApplyAppUserModelId(nint window, string appId)
     {
         try
         {
             Guid storeGuid = new("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
-            if (SHGetPropertyStoreForWindow(window, ref storeGuid, out nint storePtr) != 0 || storePtr == 0)
-            {
-                return;
-            }
+            Marshal.ThrowExceptionForHR(SHGetPropertyStoreForWindow(window, ref storeGuid, out nint storePtr));
+            if (storePtr == 0) return new InvalidOperationException("The window property store returned a null pointer.");
 
             try
             {
@@ -76,8 +80,10 @@ internal static partial class MinecraftWindowIntegration
         }
         catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
         {
-            // A game window that dies mid-write must not break the launch flow.
+            // Report after returning to managed code, while keeping enumeration best-effort.
+            return exception;
         }
+        return null;
     }
 
     private static PropertyKey AppUserModelIdKey = new(
@@ -128,7 +134,7 @@ internal static partial class MinecraftWindowIntegration
     [DllImport("shell32.dll")]
     private static extern int SHGetPropertyStoreForWindow(nint window, ref Guid interfaceId, out nint propertyStore);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool EnumWindows(EnumWindowsProc callback, nint lParam);
 

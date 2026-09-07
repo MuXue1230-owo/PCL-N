@@ -15,6 +15,7 @@ internal static partial class Program
         try
         {
             AssertTrue(window != 0);
+            AssertTrue(MinecraftWindowIntegration.ApplyAppUserModelId(new nint(-1), "PCL.InvalidWindow") is not null);
             const string appId = "PCL.Nexa.Tests.GameWindow";
             MinecraftWindowIntegration.DetachGameWindows(Environment.ProcessId, appId);
             Guid iid = new("886d8eeb-8cf2-4446-8d02-cdba1dbdcf99");
@@ -31,7 +32,12 @@ internal static partial class Program
                     AssertEqual(appId, Marshal.PtrToStringUni(value.Pointer));
                     AssertEqual(IntPtr.Size == 8 ? 24 : 16, Marshal.SizeOf<MinecraftWindowIntegration.PropVariant>());
                 }
-                finally { _ = WindowApi.PropVariantClear(ref value); }
+                finally
+                {
+                    _ = WindowApi.PropVariantClear(ref value);
+                    MinecraftWindowIntegration.PropVariant empty = default;
+                    Marshal.ThrowExceptionForHR(store.SetValue(in key, in empty));
+                }
             }
             finally { Marshal.Release(pointer); }
         }
