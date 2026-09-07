@@ -68,3 +68,15 @@ loader only changes transient presentation until a real installer contract exist
   an installation.
 - PXML compilation, Desktop navigation tests, UI.Next pager/input tests, architecture checks,
   format, trimmed Desktop validation, and the NativeAOT Desktop shell smoke pass.
+
+## Download page visual revision
+
+The download-page redesign supersedes the earlier horizontal selector-strip placement.
+Java component selectors now form a 152 px vertical, scrollable rail beside the existing
+HorizontalPager. The version input and install action stay together in a bottom action row.
+The content viewport receives the remaining width and height, with inset spacing for readable
+catalog rows. Whole-card edition choices use pale neutral/tinted surfaces and dark titles;
+accent color identifies Java versus Bedrock without filling the complete window with it.
+Existing keys, commands, pager ordering, conditional addon visibility and installation truth
+remain unchanged. All motion is still renderer-owned; no additional animation clock or service
+boundary is introduced. Validate Desktop/PXML contracts and architecture, plus a trimmed build.

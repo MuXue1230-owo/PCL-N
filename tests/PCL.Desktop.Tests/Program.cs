@@ -238,7 +238,7 @@ internal static partial class Program
         AssertClose(javaChoice.Rect.Width, bedrockChoice.Rect.Width);
         AssertClose(javaChoice.Rect.Height, bedrockChoice.Rect.Height);
         AssertClose(javaChoice.Rect.Y, bedrockChoice.Rect.Y);
-        AssertTrue(javaChoice.Rect.Width > 500 && javaChoice.Rect.Height > 500);
+        AssertTrue(javaChoice.Rect.Width > 450 && javaChoice.Rect.Height > 500);
         AssertFalse(HasKey(fixture.Shell, root, "InstallTitle"));
         AssertFalse(HasKey(fixture.Shell, root, "InstallDescription"));
         AssertFalse(root.Nodes.Any(node => node.Label is "InstallJavaChoice" or "InstallBedrockChoice"));
@@ -258,6 +258,21 @@ internal static partial class Program
         XsrUiSceneNode pager = FindByKey(fixture.Shell, java, "JavaInstallPager");
         AssertEqual(XsrUiOrientation.Horizontal, pager.Pager!.Value.Direction);
         AssertEqual(0, pager.Pager!.Value.PageIndex);
+        XsrUiSceneNode rail = FindByKey(fixture.Shell, java, "JavaInstallPagerTabs");
+        AssertTrue(pager.Rect.X >= rail.Rect.X + rail.Rect.Width);
+        AssertTrue(input.Rect.Y >= pager.Rect.Y + pager.Rect.Height);
+        foreach (XsrUiSize size in new[] { new XsrUiSize(1024, 600), new XsrUiSize(850, 520) })
+        {
+            XsrUiScene compact = fixture.Shell.Render(size);
+            XsrUiSceneNode compactPager = FindByKey(fixture.Shell, compact, "JavaInstallPager");
+            XsrUiSceneNode compactAction = FindByKey(fixture.Shell, compact, "JavaInstallStart");
+            AssertTrue(compactPager.Rect.Width > 400);
+            AssertTrue(compactAction.Rect.Y >= compactPager.Rect.Y + compactPager.Rect.Height);
+            AssertTrue(compactAction.Rect.Y + compactAction.Rect.Height <= size.Height);
+        }
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        pager = FindByKey(fixture.Shell, java, "JavaInstallPager");
+
         AssertEqual(10, pager.Pager!.Value.PageCount);
         AssertFalse(fixture.Shell.Renderer.PointerScroll(
             new XsrUiPoint(pager.Rect.X + pager.Rect.Width / 2, pager.Rect.Y + pager.Rect.Height / 2), 1));

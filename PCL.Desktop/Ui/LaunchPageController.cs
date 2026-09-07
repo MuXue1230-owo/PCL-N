@@ -863,16 +863,16 @@ internal sealed class LaunchPageController : IDisposable
     /// </summary>
     private void StyleInstallPage(Dictionary<string, XsrUiEntityId> entities)
     {
-        ApplyVisual(entities["InstallJavaChoice"], InstallJavaAccent, new(255, 255, 255),
-            XsrUiCornerRadii.Surface, border: new(255, 255, 255, 46), hover: InstallJavaHover);
-        ApplyVisual(entities["InstallBedrockChoice"], InstallBedrockAccent, new(255, 255, 255),
-            XsrUiCornerRadii.Surface, border: new(255, 255, 255, 46), hover: InstallBedrockHover);
-        ApplyVisual(entities["InstallJavaArtwork"], new(255, 255, 255, 24), new(255, 255, 255),
+        ApplyVisual(entities["InstallJavaChoice"], InstallJavaTint, PrimaryText,
+            XsrUiCornerRadii.Surface, border: CardBorder, hover: InstallJavaHover);
+        ApplyVisual(entities["InstallBedrockChoice"], InstallBedrockTint, PrimaryText,
+            XsrUiCornerRadii.Surface, border: CardBorder, hover: InstallBedrockHover);
+        ApplyVisual(entities["InstallJavaArtwork"], XsrUiColor.Transparent, InstallJavaAccent,
             XsrUiCornerRadii.Inset);
-        ApplyVisual(entities["InstallBedrockArtwork"], new(255, 255, 255, 24), new(255, 255, 255),
+        ApplyVisual(entities["InstallBedrockArtwork"], XsrUiColor.Transparent, InstallBedrockAccent,
             XsrUiCornerRadii.Inset);
-        StyleText(entities, "InstallJavaTitle", new(255, 255, 255), 24, 650);
-        StyleText(entities, "InstallBedrockTitle", new(255, 255, 255), 24, 650);
+        StyleText(entities, "InstallJavaTitle", PrimaryText, 28, 650);
+        StyleText(entities, "InstallBedrockTitle", PrimaryText, 28, 650);
         AlignText(entities, "InstallJavaTitle", XsrUiTextAlignment.Center);
         AlignText(entities, "InstallBedrockTitle", XsrUiTextAlignment.Center);
     }
@@ -887,11 +887,12 @@ internal sealed class LaunchPageController : IDisposable
         StyleText(entities, "JavaInstallStart", new(255, 255, 255), 13, 650);
         AlignText(entities, "JavaInstallStart", XsrUiTextAlignment.Center);
 
-        // The catalog is intentionally embedded below the compact entry row. It is a local
-        // configuration surface, not another navigation level. The host remains transparent so
-        // the currently presented page is the one calm surface instead of a card inside a card.
-        ApplyVisual(entities["JavaInstallPagerTabs"], new(255, 255, 255), PrimaryText,
-            XsrUiCornerRadii.Pill(36), border: CardBorder);
+        // Navigation, catalog and commit action are separate spatial groups. The pager and
+        // press transitions remain owned by UI.Next, preserving interruptible motion.
+        ApplyVisual(entities["JavaInstallPagerTabs"], ProfileSurface, PrimaryText,
+            XsrUiCornerRadii.Surface);
+        ApplyVisual(entities["JavaInstallEntryRow"], ProfileSurface, PrimaryText,
+            XsrUiCornerRadii.Surface);
 
         foreach (JavaInstallSubpage subpage in JavaInstallSubpages)
         {
@@ -1029,8 +1030,8 @@ internal sealed class LaunchPageController : IDisposable
         ApplyVisual(entity,
             active ? InstallJavaTint : XsrUiColor.Transparent,
             active ? InstallJavaAccent : SecondaryText,
-            XsrUiCornerRadii.Pill(32),
-            border: active ? InstallSelectedBorder : null,
+            XsrUiCornerRadii.Inset,
+            border: null,
             hover: active ? InstallJavaTint : PickerBackground);
         StyleText(entity, active ? InstallJavaAccent : SecondaryText, 13, active ? 650 : 500);
         AlignText(entity, XsrUiTextAlignment.Center);
