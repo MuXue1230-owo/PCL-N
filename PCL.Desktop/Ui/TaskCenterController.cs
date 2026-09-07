@@ -82,6 +82,7 @@ internal sealed class TaskCenterController : IDisposable
         public XsrUiEntityId Steps { get; } = steps;
         public List<XsrUiEntityId> StepRows { get; } = stepRows;
         public bool HasSteps { get; set; }
+        public double LastFillTarget { get; set; } = -1d;
     }
 
     public TaskCenterController(
@@ -429,12 +430,16 @@ internal sealed class TaskCenterController : IDisposable
         Style(card.Icon, XsrUiColor.Transparent, accent, XsrUiColor.Transparent, 0, MarkDirty: false);
         Style(card.Fill, accent, XsrUiColor.Transparent, XsrUiColor.Transparent, XsrUiCornerRadii.Pill(6), MarkDirty: false);
         Style(card.Percent, XsrUiColor.Transparent, accent, XsrUiColor.Transparent, 0, fontSize: 13, fontWeight: 600, MarkDirty: false);
-        if (_shell.Tree.GetComponent<XsrUiProgress>(card.Fill) is { } fill)
+        // Same guard as the bubble: FramePreparing fires every frame, so only a moved target
+        // may dirty the tree — an unconditional mark spins the render loop.
+        double fillTarget = Math.Clamp(entry.Progress, 0d, 1d);
+        if (Math.Abs(fillTarget - card.LastFillTarget) > 0.00005
+            && _shell.Tree.GetComponent<XsrUiProgress>(card.Fill) is { } fill)
         {
-            fill.SetTarget(Math.Clamp(entry.Progress, 0d, 1d));
+            card.LastFillTarget = fillTarget;
+            fill.SetTarget(fillTarget);
+            _shell.Tree.MarkDirty(card.Fill, XsrUiDirtyKinds.Layout);
         }
-
-        _shell.Tree.MarkDirty(card.Fill, XsrUiDirtyKinds.Layout);
         SetText(card.Title, entry.Title);
         SetText(card.Stage, entry.IsTerminal ? entry.Detail : $"{entry.Stage} · {entry.Detail}");
         SetText(card.Percent, $"{(int)Math.Round(Math.Clamp(entry.Progress, 0d, 1d) * 100d)}%");

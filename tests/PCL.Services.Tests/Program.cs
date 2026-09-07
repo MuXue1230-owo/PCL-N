@@ -4,6 +4,7 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("launch completion repairs missing files before start", LaunchCompletionRepairsMissingFilesBeforeStart),
         ("install runs the real pipeline into the version library", InstallRunsTheRealPipelineIntoTheVersionLibrary),
         ("install rejects processor loaders before touching disk", InstallRejectsProcessorLoadersBeforeTouchingDisk),
         ("install cancel marks the task canceled", InstallCancelMarksTheTaskCanceled),

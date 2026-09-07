@@ -17,3 +17,17 @@ functional controls. The about card uses concise product copy.
 
 Validation covers provider token separation, injector arguments, Java choice outcomes, dropdown
 alignment/containment, input focus/caret lifecycle, and managed/architecture/AOT gates.
+
+
+## Post-review behavior corrections (2026-09)
+
+- **Success closes the launching page immediately.** The window confirmation (or its platform
+  fallback) already passed, so the page pops on success — the user returns to the library while
+  the game warms up. The previous behavior parked the narration on a 游戏已启动 card until the
+  process session ended.
+- **The legacy 补全文件 step is restored in `complete_files`.** Before the JVM starts, every
+  file the plan references is verified on disk and repaired through the shared download engine:
+  client jar, asset index, asset objects, and the full inheritance chain's libraries (natives
+  included). A missing library used to kill the JVM before its window appeared, which surfaced
+  as the opaque "JVM 在窗口出现前意外退出" failure. Existing files are never re-downloaded, so
+  completion after a partial install resumes rather than restarts.

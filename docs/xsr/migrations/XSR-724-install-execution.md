@@ -9,10 +9,11 @@ build, addon list); the runtime composer builds the router over the foundation h
 
 1. **版本信息** — resolve the vanilla version JSON from the Mojang manifest (bmclapi failover
    via `MinecraftDownloadSourcePlanner.GetLauncherOrMetaSources`), and for the Fabric family
-   the loader profile JSON (`meta…/versions/loader/{game}/{build}/profile/json`). Both version
-   documents are written before any transfer — a partial install stays inspectable, matching
-   legacy write-order. Loader documents carry `id = <game>-<loader><build>` and
-   `inheritsFrom = <game>`.
+   the loader profile JSON (`meta…/versions/loader/{game}/{build}/profile/json`). Loader
+   documents carry `id = <game>-<loader><build>` and `inheritsFrom = <game>`. Both version
+   documents **commit last**, after every transfer: discovery lists instances by their version
+   json, so a run that dies mid-transfer leaves an invisible, resumable directory instead of a
+   launchable half-install whose missing libraries kill the JVM before its window appears.
 2. **Planning** — one transfer plan over the existing shared planners: asset index
    (`CreateAssetIndexPlan`), client jar (`CreateClientJarPlan`), vanilla + loader libraries
    (`MinecraftLibraryResolver` with the detected platform context, bmclapi failover), assets
@@ -22,7 +23,9 @@ build, addon list); the runtime composer builds the router over the foundation h
 3. **游戏文件 / 加载器 / 附加组件** — every planned file transfers through the shared
    `DownloadService` (resume, segmentation, per-destination coalescing). Progress is
    file-accurate across one shared budget: overall = (completed + intra-file fraction) /
-   total files, speed passes through per transfer.
+   total files, speed passes through per transfer. Mirror rate limits are bursty, so one file
+   gets a short delayed retry, and third-party library lists keep the canonical URL as a
+   last-resort source after the bmclapi mirrors.
 4. **完成** — the task completes (`已安装 <id>`), `Installed(root)` fires, and the composition
    root rescans the active version library so the new instance appears immediately.
 
@@ -33,6 +36,12 @@ LabyMod) are rejected **before any disk write** with a message that names the mi
 XSR-604 deliberately deferred processor execution. The Fabric family (Fabric, Legacy Fabric,
 Quilt) is fully supported because their profile JSON is declarative. The Java-runtime and
 Bedrock install flows remain on their own tracks (JavaRuntimeInstaller / XSR-721).
+
+## Launch-side twin
+
+`MinecraftLaunchFileCompletion` runs the same planner set from the launch pipeline's
+`complete_files` stage (see XSR-717): verify-then-repair with the shared download engine,
+never re-downloading present files.
 
 ## Test seams
 

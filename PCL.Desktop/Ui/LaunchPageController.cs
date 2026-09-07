@@ -1629,8 +1629,11 @@ internal sealed partial class LaunchPageController : IDisposable
 
         if (result.IsSuccess)
         {
-            // The pipeline keeps narrating (游戏已启动) until the process session ends.
+            // The window confirmation (or its platform fallback) already passed: success
+            // closes the page immediately so the user is back at the library while the game
+            // warms up, instead of parking on a 游戏已启动 card until the session ends.
             _feedback.Info("Minecraft 已启动。");
+            RequestCloseLaunchingPage();
             return;
         }
 

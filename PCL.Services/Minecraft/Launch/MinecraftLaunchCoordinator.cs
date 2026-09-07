@@ -64,6 +64,7 @@ public sealed class MinecraftLaunchCoordinator
     private readonly JavaSelectionService _javaSelection;
     private readonly IJavaRuntimeInstaller _javaInstaller;
     private readonly MinecraftLaunchExecutor _executor;
+    private readonly MinecraftLaunchFileCompletion? _fileCompletion;
     private readonly MinecraftLaunchPlatform _platform;
     private readonly IAccountLaunchIdentityResolver _identityResolver;
     private readonly string _launcherVersion;
@@ -92,7 +93,8 @@ public sealed class MinecraftLaunchCoordinator
         string? launcherVersion = null,
         IMinecraftWindowProbe? windowProbe = null,
         IAuthlibInjectorProvider? authlib = null,
-        Action<int>? gameWindowAppeared = null)
+        Action<int>? gameWindowAppeared = null,
+        MinecraftLaunchFileCompletion? fileCompletion = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(minecraftRootDirectory);
         ArgumentException.ThrowIfNullOrWhiteSpace(javaRuntimeRootDirectory);
@@ -111,6 +113,7 @@ public sealed class MinecraftLaunchCoordinator
         _javaSelection = javaSelection ?? throw new ArgumentNullException(nameof(javaSelection));
         _javaInstaller = javaInstaller ?? throw new ArgumentNullException(nameof(javaInstaller));
         _executor = executor ?? throw new ArgumentNullException(nameof(executor));
+        _fileCompletion = fileCompletion;
         _platform = platform ?? MinecraftLaunchPlatform.Detect();
         if (_platform.OperatingSystem == MinecraftLibraryOperatingSystem.Unknown)
         {
@@ -270,6 +273,20 @@ public sealed class MinecraftLaunchCoordinator
                         .ResolveAsync(instance, root, token)
                         .ConfigureAwait(false);
                     loader = MinecraftModLoaderDetector.Detect(manifests.Current);
+                    // The legacy 补全文件 step: verify every referenced file on disk and
+                    // repair the missing ones before the JVM starts. Real download progress
+                    // flows through the same stage reports, so the narration stays honest.
+                    if (_fileCompletion is { } completion)
+                    {
+                        await completion.CompleteAsync(
+                            root,
+                            instance,
+                            manifests,
+                            _platform,
+                            method,
+                            _progress,
+                            token).ConfigureAwait(false);
+                    }
                 },
                 cancellationToken).ConfigureAwait(false);
             _log?.Debug("Launch", $"Effective manifest resolved instance={instanceId} inherited={manifests.Inherited.Count} loader={loader.Kind}");

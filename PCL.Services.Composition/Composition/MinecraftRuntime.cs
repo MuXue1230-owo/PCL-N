@@ -144,6 +144,10 @@ public static class MinecraftRuntimeComposer
         owned.Add(authlibHttp);
         owned.Add(authlib);
         MinecraftLaunchExecutor executor = new(processService, host.Logging);
+        // The legacy 补全文件 step: the launch pipeline repairs missing files before the JVM
+        // starts, sharing the foundation download engine with installs.
+        MinecraftLaunchFileCompletion fileCompletion = new(host.Downloads, host.Logging);
+        owned.Add(fileCompletion);
         MinecraftLaunchCoordinator coordinator = new(
             minecraftRootDirectory,
             runtimeRoot,
@@ -158,7 +162,7 @@ public static class MinecraftRuntimeComposer
             new MinecraftLaunchProgressPublisher(host.StateStore),
             identityResolver,
             launcherVersion,
-            windowProbe, authlib, gameWindowAppeared);
+            windowProbe, authlib, gameWindowAppeared, fileCompletion);
         IXsrDispatchObserver dispatchObserver = observer ?? NullDispatchObserver.Instance;
         XsrCommandRouterBuilder commandBuilder = new();
         commandBuilder.Register(MinecraftRouteIds.Start, MinecraftCommands.CreateStartHandler(coordinator));

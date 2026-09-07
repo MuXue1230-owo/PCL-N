@@ -102,13 +102,10 @@ public sealed class MinecraftInstallService : IDisposable
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
         {
-            if (task.CancellationToken.IsCancellationRequested)
-            {
-                task.Canceled();
-                return XsrResult.Failure<MinecraftInstallResult>(XsrRuntimeErrors.Cancelled());
-            }
-
-            throw;
+            // Either the task card or the dispatching caller stopped the run; both leave a
+            // canceled task card and a cancelled result — never a raw escape to the caller.
+            task.Canceled();
+            return XsrResult.Failure<MinecraftInstallResult>(XsrRuntimeErrors.Cancelled());
         }
         catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
         {
@@ -140,8 +137,10 @@ public sealed class MinecraftInstallService : IDisposable
         Directory.CreateDirectory(gameDirectory);
         Directory.CreateDirectory(instanceDirectory);
 
-        // ── 版本信息: resolve the vanilla manifest entry, the loader profile, and write both
-        // version documents before any file transfer so a partial install stays inspectable.
+        // ── 版本信息: resolve the vanilla manifest entry and the loader profile. Both version
+        // documents COMMIT LAST: discovery lists instances by their version json, so a run that
+        // dies mid-transfer leaves an invisible, resumable directory instead of a launchable
+        // half-install whose missing libraries would kill the JVM before its window appears.
         task.Report(StagePlan[0], "正在获取版本清单", 0.02, 0, 0, 0);
         JsonObject vanillaJson = await _metadata.FetchVanillaVersionJsonAsync(game, token).ConfigureAwait(false);
         JsonObject? loaderJson = command.Loader is { } profileLoader && command.LoaderBuild is { } build
@@ -151,16 +150,6 @@ public sealed class MinecraftInstallService : IDisposable
         {
             loaderJson["id"] = instanceId;
             loaderJson["inheritsFrom"] = game;
-        }
-
-        await File.WriteAllTextAsync(
-            Path.Combine(gameDirectory, gameName + ".json"),
-            vanillaJson.ToJsonString(JsonOptions), token).ConfigureAwait(false);
-        if (loaderJson is not null)
-        {
-            await File.WriteAllTextAsync(
-                Path.Combine(instanceDirectory, instanceId + ".json"),
-                loaderJson.ToJsonString(JsonOptions), token).ConfigureAwait(false);
         }
 
         task.Report(StagePlan[0], "版本信息就绪", 1, 0, 0, 0);
@@ -320,23 +309,17 @@ public sealed class MinecraftInstallService : IDisposable
                         ? source => factory(source)
                         : source => new HttpConnection(_http, source),
                 };
-                DownloadTransferResult transfer = await _downloads.DownloadAsync(request,
-                    progress =>
-                    {
-                        double overall = totalFiles == 0
-                            ? 0.5
-                            : (doneFiles + (progress.TotalBytes > 0
-                                  ? Math.Clamp(progress.DownloadedBytes / (double)progress.TotalBytes, 0d, 1d)
-                                  : 0d)) / totalFiles;
-                        task.Report(
-                            stage,
-                            stageLabel,
-                            Math.Clamp(overall, 0d, 0.999d),
-                            doneFiles,
-                            totalFiles,
-                            progress.BytesPerSecond);
-                    },
-                    token).ConfigureAwait(false);
+                DownloadTransferResult transfer = await DownloadPlannedFileAsync(
+                    request, task, stage, stageLabel, doneFiles, totalFiles, token).ConfigureAwait(false);
+                if (!transfer.Success)
+                {
+                    // Mirror rate limits are bursty: one short retry has saved whole installs
+                    // that died at 99% on a single 403.
+                    await Task.Delay(FileRetryDelay, token).ConfigureAwait(false);
+                    transfer = await DownloadPlannedFileAsync(
+                        request, task, stage, stageLabel, doneFiles, totalFiles, token).ConfigureAwait(false);
+                }
+
                 if (!transfer.Success)
                 {
                     throw new InvalidOperationException(
@@ -349,10 +332,51 @@ public sealed class MinecraftInstallService : IDisposable
             task.Report(stage, $"{stage}就绪", 0.999, doneFiles, totalFiles, 0);
         }
 
+        // The documents land only now: the instance becomes discoverable exactly when its
+        // files are complete. Re-runs skip existing files, so this commit is cheap.
+        await File.WriteAllTextAsync(
+            Path.Combine(gameDirectory, gameName + ".json"),
+            vanillaJson.ToJsonString(JsonOptions), token).ConfigureAwait(false);
+        if (loaderJson is not null)
+        {
+            await File.WriteAllTextAsync(
+                Path.Combine(instanceDirectory, instanceId + ".json"),
+                loaderJson.ToJsonString(JsonOptions), token).ConfigureAwait(false);
+        }
+
         task.Complete($"已安装 {instanceId}");
         Installed?.Invoke(root);
         return new MinecraftInstallResult(instanceId, instanceDirectory);
     }
+
+    private static readonly TimeSpan FileRetryDelay = TimeSpan.FromSeconds(3);
+
+    private Task<DownloadTransferResult> DownloadPlannedFileAsync(
+        DownloadRequest request,
+        ITaskCenterTask task,
+        string stage,
+        string stageLabel,
+        int doneFiles,
+        int totalFiles,
+        CancellationToken token) =>
+        _downloads.DownloadAsync(
+            request,
+            progress =>
+            {
+                double overall = totalFiles == 0
+                    ? 0.5
+                    : (doneFiles + (progress.TotalBytes > 0
+                          ? Math.Clamp(progress.DownloadedBytes / (double)progress.TotalBytes, 0d, 1d)
+                          : 0d)) / totalFiles;
+                task.Report(
+                    stage,
+                    stageLabel,
+                    Math.Clamp(overall, 0d, 0.999d),
+                    doneFiles,
+                    totalFiles,
+                    progress.BytesPerSecond);
+            },
+            token);
 
     private static IEnumerable<PlannedFile> LibraryFiles(IReadOnlyList<MinecraftLibraryToken> libraries, string root)
     {
@@ -363,9 +387,15 @@ public sealed class MinecraftInstallService : IDisposable
                 continue;
             }
 
-            yield return new PlannedFile(
-                MinecraftDownloadSourcePlanner.GetLibrarySources(library.Url, true),
-                library.LocalPath, library.Sha1, library.Size);
+            // The mirror-first order stands, but a rate-limited bmclapi must not strand a
+            // third-party artifact: the canonical URL rides along as the last resort.
+            string[] sources = MinecraftDownloadSourcePlanner.GetLibrarySources(library.Url, true);
+            if (!sources.Contains(library.Url, StringComparer.Ordinal))
+            {
+                sources = [.. sources, library.Url];
+            }
+
+            yield return new PlannedFile(sources, library.LocalPath, library.Sha1, library.Size);
         }
     }
 

@@ -44,6 +44,7 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
     private bool _pageVisible;
     private bool _closing;
     private int _lastAnnouncedPercent = -1;
+    private double _lastTarget = -1d;
     private bool _disposed;
 
     public DesktopTaskBubblePresenter(XsrUiShell shell, XsrStateStore store, TimeProvider? timeProvider = null)
@@ -176,9 +177,14 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
 
         // With no active task the bubble reads as filled (completion is acknowledged by the
         // user on the page, not by a timeout); with active work it follows aggregated progress.
+        // Only touch the tree when the target actually moved: FramePreparing fires every frame,
+        // and an unconditional MarkDirty here keeps the whole tree perpetually dirty, which
+        // spins the render loop and freezes the UI.
         double target = summary.ActiveCount > 0 ? Math.Clamp(summary.Progress, 0d, 1d) : 1d;
-        if (_shell.Tree.GetComponent<XsrUiProgress>(_fill) is { } fill)
+        if (Math.Abs(target - _lastTarget) > 0.00005
+            && _shell.Tree.GetComponent<XsrUiProgress>(_fill) is { } fill)
         {
+            _lastTarget = target;
             fill.SetTarget(target);
             _shell.Tree.MarkDirty(_fill, XsrUiDirtyKinds.Layout);
         }

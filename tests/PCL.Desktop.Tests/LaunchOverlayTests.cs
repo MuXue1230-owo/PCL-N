@@ -36,7 +36,7 @@ internal static partial class Program
 
     private static void LaunchOverlayShowsResetFactsWhenLaunchStarts()
     {
-        RecordingStartRoute recording = new();
+        RecordingStartRoute recording = new() { Hang = true };
         using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
         SelectFirstAccountAndLaunch(fixture, recording);
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(850, 500));
@@ -52,6 +52,7 @@ internal static partial class Program
     {
         RecordingStartRoute recording = new()
         {
+            Hang = true,
             ProgressStore = null,
         };
         using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
@@ -88,6 +89,20 @@ internal static partial class Program
         AssertEqual("游戏已启动", FindByKey(fixture.Shell, scene, "LaunchingTitle").Text);
     }
 
+    private static void LaunchOverlayClosesImmediatelyOnSuccess()
+    {
+        RecordingStartRoute recording = new(); // Outcome = Success, no Hang: completes at once.
+        using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
+        SelectFirstAccountAndLaunch(fixture, recording);
+        // Success exits the launching page right away — the user returns to the library while
+        // the game warms up, instead of parking on a 游戏已启动 card until the session ends.
+        AssertTrue(SpinWait.SpinUntil(() =>
+        {
+            fixture.Shell.Render(new XsrUiSize(850, 500));
+            return fixture.Shell.Stage.Navigation.Depth == 1;
+        }, TimeSpan.FromSeconds(2)));
+    }
+
     private static void LaunchOverlayClosesOnFailure()
     {
         RecordingStartRoute recording = new()
@@ -105,7 +120,7 @@ internal static partial class Program
 
     private static void LaunchOverlayPromptsBeforeJavaDownload()
     {
-        RecordingStartRoute recording = new();
+        RecordingStartRoute recording = new() { Hang = true };
         using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
         SelectFirstAccountAndLaunch(fixture, recording);
 
@@ -168,7 +183,7 @@ internal static partial class Program
 
     private static void LaunchedCancelButtonBecomesBack()
     {
-        RecordingStartRoute recording = new();
+        RecordingStartRoute recording = new() { Hang = true };
         using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
         SelectFirstAccountAndLaunch(fixture, recording);
         fixture.Store.Publish(fixture.Store.Resolve(MinecraftLaunchProgressState.SnapshotKey),
@@ -187,7 +202,7 @@ internal static partial class Program
 
     private static void LaunchOverlayCancelHidesOverlay()
     {
-        RecordingStartRoute recording = new();
+        RecordingStartRoute recording = new() { Hang = true };
         using LaunchPageFixture fixture = ComposeLaunchOverlayFixture(recording);
         SelectFirstAccountAndLaunch(fixture, recording);
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(850, 500));

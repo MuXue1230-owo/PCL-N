@@ -99,6 +99,7 @@ internal static partial class Program
         ("notifications share one lower-left surface and every level closes manually", NotificationsShareLowerLeftSurfaceAndCloseManually),
         ("notification summaries open complete one-action scrollable dialogs", NotificationSummaryOpensCompleteScrollableDialog),
         ("notification overflow remains bottom-pinned and recovers without disappearing", NotificationOverflowRecoversWithoutDisappearing),
+        ("launch overlay closes immediately on success", LaunchOverlayClosesImmediatelyOnSuccess),
         ("closing notifications leave stack flow before their exit settles", ClosingNotificationReflowsImmediately),
         ("notification timers request render without mutating the UI tree", NotificationTimersStayOffTheRenderTree),
         ("dialog stays inside the window traps the page and restores focus on escape", DialogStaysInsideWindowAndRestoresFocus),
@@ -856,6 +857,12 @@ internal static partial class Program
 
         public XsrResult Outcome { get; set; } = XsrResult.Success();
 
+        /// <summary>
+        /// Keeps the launch pipeline in flight: success now closes the launching page
+        /// immediately, so mid-launch narration tests must not complete the route.
+        /// </summary>
+        public bool Hang { get; set; }
+
         public bool? LastDecision { get; set; }
 
         public XsrStateStore? ProgressStore { get; set; }
@@ -896,8 +903,15 @@ internal static partial class Program
                 }
             }
 
+            if (Hang)
+            {
+                return new ValueTask<XsrResult>(_hang.Task);
+            }
+
             return ValueTask.FromResult(Outcome);
         }
+
+        private readonly TaskCompletionSource<XsrResult> _hang = new();
     }
 
     private sealed class NoopDispatchObserver : IXsrDispatchObserver
