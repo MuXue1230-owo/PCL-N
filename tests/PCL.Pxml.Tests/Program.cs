@@ -24,6 +24,7 @@ internal static partial class Program
         ("generated control catalog is complete and deterministic", GeneratedControlCatalogIsCompleteAndDeterministic),
         ("notification and dialog compile as first-class semantic controls", CompileFeedbackSurfaceControls),
         ("vertical pager compiles loads and routes keyboard pages", VerticalPagerCompilesLoadsAndRoutesKeyboardPages),
+        ("horizontal pager compiles loads and routes keyboard pages", HorizontalPagerCompilesLoadsAndRoutesKeyboardPages),
         ("text input drafts never expose passwords", TextInputDraftsNeverExposePasswords),
         ("transition groups carry bound content keys", TransitionGroupsCarryTheirBoundContentKey),
         ("compile simple page", CompileSimplePage),

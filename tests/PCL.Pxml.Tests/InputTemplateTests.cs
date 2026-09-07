@@ -29,6 +29,30 @@ internal static partial class Program
         AssertTrue(!scene.Nodes.Any(node => node.Text == "About"));
     }
 
+    private static void HorizontalPagerCompilesLoadsAndRoutesKeyboardPages()
+    {
+        PxmlHostIr ir = PxmlCompiler.Compile(PxmlParser.Parse("""
+            <HorizontalPager Key="pager" Width="200" Height="100" Label="Install categories">
+              <Text Content="Minecraft" />
+              <Text Content="Loaders" />
+            </HorizontalPager>
+            """));
+        AssertEqual(PxmlRuntimeRecipe.HorizontalPager, ir.Root.Recipe);
+        XsrUiTree tree = new();
+        XsrStateStore store = new XsrStateStoreBuilder().Build();
+        XsrUiEntityId host = tree.Create("host");
+        XsrUiEntityId pager = PxmlUiLoader.Load(ir, tree, store, host);
+        AssertEqual(XsrUiOrientation.Horizontal, tree.GetComponent<XsrUiPager>(pager)!.Direction);
+        XsrUiRenderer renderer = new(tree, store) { ReducedMotion = true };
+        renderer.SetRoot(host);
+        AssertTrue(renderer.Render().Nodes.Any(node => node.Text == "Minecraft"));
+        AssertTrue(renderer.Focus(pager));
+        AssertTrue(renderer.HandleKey(XsrUiKey.Right));
+        XsrUiScene scene = renderer.Render();
+        AssertTrue(scene.Nodes.Any(node => node.Text == "Loaders"));
+        AssertTrue(!scene.Nodes.Any(node => node.Text == "Minecraft"));
+    }
+
     private static void TemplateButtonsRouteChildInputAndObeyEnabledState()
     {
         XsrSemanticId key = XsrSemanticId.Parse("test.enabled");

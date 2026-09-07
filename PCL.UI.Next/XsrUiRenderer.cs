@@ -462,8 +462,12 @@ public sealed partial class XsrUiRenderer
             pager.PageIndex = Math.Clamp(pager.PageIndex, 0, Math.Max(0, pages.Length - 1));
             if (ReducedMotion && !pager.IsDragging) pager.Position = pager.PageIndex;
             for (int i = 0; i < pages.Length; i++)
-                Layout(pages[i], new XsrUiRect(contentX, contentY + (i - pager.Position) * contentHeight,
-                    contentWidth, contentHeight));
+            {
+                double offset = i - pager.Position;
+                Layout(pages[i], pager.Direction == XsrUiOrientation.Vertical
+                    ? new XsrUiRect(contentX, contentY + offset * contentHeight, contentWidth, contentHeight)
+                    : new XsrUiRect(contentX + offset * contentWidth, contentY, contentWidth, contentHeight));
+            }
             return;
         }
 
@@ -1028,7 +1032,12 @@ public sealed partial class XsrUiRenderer
                     break;
                 }
 
-                if (_tree.GetComponent<XsrUiPager>(entity) is not null && deltaY != 0)
+                // Paging is deliberately asymmetric: a vertical pager owns the conventional
+                // wheel axis, while a horizontal pager keeps wheel and trackpad scrolling for
+                // its surrounding content. Horizontal paging remains direct-manipulation only
+                // (drag or Left/Right), so a catalog cannot change accidentally.
+                if (_tree.GetComponent<XsrUiPager>(entity) is { Direction: XsrUiOrientation.Vertical }
+                    && deltaY != 0)
                 {
                     _ = MovePager(entity, Math.Sign(deltaY));
                     return true;
@@ -1065,8 +1074,10 @@ public sealed partial class XsrUiRenderer
         {
             XsrUiKey.Tab => FocusNext(),
             XsrUiKey.Enter or XsrUiKey.Space => _focused.IsAssigned && Activate(_focused),
-            XsrUiKey.Up => MovePager(FindPager(_focused), -1),
-            XsrUiKey.Down => MovePager(FindPager(_focused), 1),
+            XsrUiKey.Up => MovePagerForDirection(XsrUiOrientation.Vertical, -1),
+            XsrUiKey.Down => MovePagerForDirection(XsrUiOrientation.Vertical, 1),
+            XsrUiKey.Left => MovePagerForDirection(XsrUiOrientation.Horizontal, -1),
+            XsrUiKey.Right => MovePagerForDirection(XsrUiOrientation.Horizontal, 1),
             XsrUiKey.Escape => DismissActiveOverlay(),
             _ => false,
         };

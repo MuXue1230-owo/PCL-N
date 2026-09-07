@@ -51,7 +51,7 @@ public sealed class PxmlControlCatalogGenerator : IIncrementalGenerator
 
     private static readonly HashSet<string> Recipes = new(StringComparer.Ordinal)
     {
-        "Element", "StackLayout", "Text", "CommandInput", "Image", "VerticalPager", "TextInput",
+        "Element", "StackLayout", "Text", "CommandInput", "Image", "VerticalPager", "HorizontalPager", "TextInput",
         "Progress",
     };
 

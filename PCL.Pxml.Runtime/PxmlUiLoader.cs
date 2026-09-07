@@ -103,7 +103,11 @@ public sealed class PxmlUiLoader
             case PxmlRuntimeRecipe.Element:
                 break;
             case PxmlRuntimeRecipe.VerticalPager:
-                tree.SetComponent(entity, new XsrUiPager());
+                tree.SetComponent(entity, new XsrUiPager(XsrUiOrientation.Vertical));
+                tree.SetComponent(entity, new XsrUiInput { Focusable = true });
+                break;
+            case PxmlRuntimeRecipe.HorizontalPager:
+                tree.SetComponent(entity, new XsrUiPager(XsrUiOrientation.Horizontal));
                 tree.SetComponent(entity, new XsrUiInput { Focusable = true });
                 break;
             case PxmlRuntimeRecipe.Progress:

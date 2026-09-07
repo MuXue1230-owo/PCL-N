@@ -76,6 +76,15 @@ public sealed partial class XsrUiRenderer
         _tree.MarkDirty(entity, XsrUiDirtyKinds.Layout);
     }
 
+    private bool MovePagerForDirection(XsrUiOrientation direction, int pageDirection)
+    {
+        XsrUiEntityId entity = FindPager(_focused);
+        return entity.IsAssigned
+            && _tree.GetComponent<XsrUiPager>(entity) is { } pager
+            && pager.Direction == direction
+            && MovePager(entity, pageDirection);
+    }
+
     private XsrUiEntityId FindPager(XsrUiEntityId entity)
     {
         while (entity.IsAssigned && _tree.IsAlive(entity))
@@ -109,16 +118,23 @@ public sealed partial class XsrUiRenderer
     {
         if (!_gesturePager.IsAssigned || !_tree.IsAlive(_gesturePager)
             || _tree.GetComponent<XsrUiPager>(_gesturePager) is not { } pager
-            || !_paintRects.TryGetValue(_gesturePager.Index, out XsrUiRect rect) || rect.Height <= 0)
+            || !_paintRects.TryGetValue(_gesturePager.Index, out XsrUiRect rect)
+            || (pager.Direction == XsrUiOrientation.Vertical ? rect.Height : rect.Width) <= 0)
             return false;
-        double delta = _pagerGrab.Y - point.Y;
+        double delta = pager.Direction == XsrUiOrientation.Vertical
+            ? _pagerGrab.Y - point.Y
+            : _pagerGrab.X - point.X;
+        double crossAxisDelta = pager.Direction == XsrUiOrientation.Vertical
+            ? point.X - _pagerGrab.X
+            : point.Y - _pagerGrab.Y;
         if (!_pagerDragCommitted)
         {
-            if (Math.Abs(delta) < 8 || Math.Abs(delta) < Math.Abs(point.X - _pagerGrab.X)) return false;
+            if (Math.Abs(delta) < 8 || Math.Abs(delta) < Math.Abs(crossAxisDelta)) return false;
             _pagerDragCommitted = true;
             ClearPointerPress();
         }
-        double position = _pagerGrabPosition + delta / rect.Height;
+        double viewportLength = pager.Direction == XsrUiOrientation.Vertical ? rect.Height : rect.Width;
+        double position = _pagerGrabPosition + delta / viewportLength;
         double bound = Math.Clamp(position, 0, Math.Max(0, pager.PageCount - 1));
         double overflow = position - bound;
         pager.Position = bound + overflow * .55 / (1 + Math.Abs(overflow) * .55);

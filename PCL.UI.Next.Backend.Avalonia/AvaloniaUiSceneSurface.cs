@@ -311,6 +311,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             Key.Space => XsrUiKey.Space,
             Key.Up => XsrUiKey.Up,
             Key.Down => XsrUiKey.Down,
+            Key.Left => XsrUiKey.Left,
+            Key.Right => XsrUiKey.Right,
             Key.Escape => XsrUiKey.Escape,
             _ => null,
         };

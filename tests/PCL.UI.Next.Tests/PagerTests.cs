@@ -6,12 +6,12 @@ namespace PCL.UI.Next.Tests;
 internal static partial class Program
 {
     private static (XsrUiTree Tree, XsrUiRenderer Renderer, XsrUiEntityId Root, XsrUiEntityId[] Pages)
-        CreatePagerFixture(int count = 3)
+        CreatePagerFixture(int count = 3, XsrUiOrientation direction = XsrUiOrientation.Vertical)
     {
         XsrUiTree tree = new();
         XsrUiEntityId root = tree.Create("pager");
         tree.SetComponent(root, new XsrUiElement { Width = 180, Height = 100 });
-        tree.SetComponent(root, new XsrUiPager());
+        tree.SetComponent(root, new XsrUiPager(direction));
         tree.SetComponent(root, new XsrUiInput { Focusable = true });
         List<XsrUiEntityId> pages = [];
         for (int i = 0; i < count; i++)
@@ -95,5 +95,49 @@ internal static partial class Program
         AssertTrue(empty.Renderer.PointerPressed(new XsrUiPoint(10, 80)));
         AssertTrue(empty.Renderer.PointerMoved(new XsrUiPoint(10, 20)));
         AssertTrue(empty.Renderer.PointerReleased(new XsrUiPoint(10, 20)));
+    }
+
+    private static void HorizontalPagerUsesHorizontalGeometryAndInput()
+    {
+        var (tree, renderer, root, pages) = CreatePagerFixture(direction: XsrUiOrientation.Horizontal);
+        XsrUiPager pager = tree.GetComponent<XsrUiPager>(root)!;
+        AssertEqual(XsrUiOrientation.Horizontal, pager.Direction);
+
+        AssertTrue(renderer.Focus(pages[0]));
+        AssertTrue(renderer.HandleKey(XsrUiKey.Right));
+        renderer.SetPagerPresentationPosition(root, .5);
+        XsrUiScene scene = renderer.Render();
+        XsrUiSceneNode outgoing = scene.Nodes.Single(node => node.Entity == pages[0]);
+        XsrUiSceneNode incoming = scene.Nodes.Single(node => node.Entity == pages[1]);
+        AssertEqual(new XsrUiRect(-90, 0, 180, 100), outgoing.Rect);
+        AssertEqual(new XsrUiRect(0, 0, 90, 100), outgoing.ClipRect!.Value);
+        AssertEqual(new XsrUiRect(90, 0, 180, 100), incoming.Rect);
+        AssertEqual(new XsrUiRect(90, 0, 90, 100), incoming.ClipRect!.Value);
+        AssertTrue(!outgoing.IsAccessible && !outgoing.IsFocusable && !outgoing.IsClickable);
+        AssertTrue(incoming.IsAccessible && incoming.IsFocusable);
+
+        renderer.ReducedMotion = true;
+        _ = renderer.Render();
+        AssertFalse(renderer.PointerScroll(new XsrUiPoint(90, 50), 1));
+        AssertFalse(renderer.PointerScroll(new XsrUiPoint(90, 50), 0, 1));
+        _ = renderer.Render();
+        AssertEqual(1, pager.PageIndex);
+        AssertEqual(1d, pager.Position);
+        AssertTrue(renderer.Focus(pages[1]));
+        AssertTrue(renderer.HandleKey(XsrUiKey.Right));
+        _ = renderer.Render();
+        AssertEqual(2, pager.PageIndex);
+        AssertTrue(renderer.Focus(pages[2]));
+        AssertTrue(renderer.HandleKey(XsrUiKey.Left));
+        _ = renderer.Render();
+        AssertEqual(1, pager.PageIndex);
+
+        renderer.ReducedMotion = false;
+        AssertTrue(renderer.PointerPressed(new XsrUiPoint(160, 50)));
+        AssertTrue(renderer.PointerMoved(new XsrUiPoint(40, 50)));
+        AssertClose(1 + 120d / 180d, pager.Position);
+        AssertTrue(renderer.PointerReleased(new XsrUiPoint(40, 50)));
+        AssertEqual(2, pager.PageIndex);
+        AssertTrue(!pager.IsDragging);
     }
 }

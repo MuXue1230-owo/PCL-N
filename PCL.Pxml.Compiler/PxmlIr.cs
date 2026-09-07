@@ -18,6 +18,7 @@ public enum PxmlRuntimeRecipe
     VerticalPager = 6,
     TextInput = 7,
     Progress = 8,
+    HorizontalPager = 9,
 }
 
 /// <summary>

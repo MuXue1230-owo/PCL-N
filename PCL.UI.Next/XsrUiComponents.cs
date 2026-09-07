@@ -437,4 +437,6 @@ public enum XsrUiKey
     Up = 5,
     Down = 6,
     Escape = 7,
+    Left = 8,
+    Right = 9,
 }

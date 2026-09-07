@@ -93,6 +93,7 @@ internal static partial class Program
         ("reduced motion skips rail presentation motion", Sync(ReducedMotionSkipsRailPresentationMotion)),
         ("pager clips pages and excludes inactive input and accessibility", Sync(PagerClipsPagesAndExcludesInactiveInput)),
         ("pager supports wheel keyboard drag cancellation and reduced motion", Sync(PagerSupportsAllInputPaths)),
+        ("horizontal pager uses horizontal geometry and input", Sync(HorizontalPagerUsesHorizontalGeometryAndInput)),
     ];
 
     private static async Task<int> Main()
