@@ -27,6 +27,7 @@ public sealed class XsrUiTransition
     {
         tree.Walk(root, entity =>
         {
+            if (tree.GetComponent<XsrUiStableContent>(entity) is not null) return false;
             if (tree.Children(entity).Count != 0) return true;
             bool input = tree.GetComponent<XsrUiInput>(entity) is not null;
             bool image = tree.GetComponent<XsrUiImage>(entity) is not null;

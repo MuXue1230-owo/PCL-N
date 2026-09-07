@@ -440,3 +440,37 @@ public enum XsrUiKey
     Left = 8,
     Right = 9,
 }
+
+/// <summary>A shared selector track. Its hidden child thumb is painted behind the selected segment.</summary>
+public sealed class XsrUiSegmentedTrack(XsrUiEntityId thumb)
+{
+    public XsrUiEntityId Thumb { get; } = thumb;
+    public XsrUiEntityId Selected { get; set; }
+    internal XsrUiEntityId PresentedSelection { get; set; }
+    internal XsrUiRect LastTarget { get; set; }
+    internal bool Dragging { get; set; }
+    internal double DragX { get; set; }
+    internal double GrabOffset { get; set; }
+    internal long GestureRevision { get; set; }
+}
+
+/// <summary>Width reveal for dynamically available segments, advanced by the host's shared clock.</summary>
+public sealed class XsrUiSegmentReveal(double width)
+{
+    public double Width { get; } = width;
+    public bool Expanded { get; internal set; } = true;
+    public double Progress { get; internal set; } = 1;
+}
+public readonly record struct XsrUiSegmentRevealSnapshot(bool Expanded, double Progress);
+
+/// <summary>Opt-in vertical list direct manipulation, independent of catalog semantics.</summary>
+public sealed class XsrUiScrollGesture
+{
+    internal bool Dragging { get; set; }
+    internal double Velocity { get; set; }
+    internal long Revision { get; set; }
+}
+public readonly record struct XsrUiScrollMotionSnapshot(long Revision, bool Dragging, double Velocity);
+
+/// <summary>Retained list content appears immediately, including rows entering a viewport.</summary>
+public sealed class XsrUiStableContent;

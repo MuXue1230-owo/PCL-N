@@ -37,12 +37,14 @@ public sealed partial class XsrUiRenderer
         XsrUiTree tree,
         XsrStateStore state,
         IXsrUiIntentSink? sink = null,
-        XsrUiStateBridge? stateBridge = null)
+        XsrUiStateBridge? stateBridge = null,
+        TimeProvider? timeProvider = null)
     {
         _tree = tree ?? throw new ArgumentNullException(nameof(tree));
         _state = state ?? throw new ArgumentNullException(nameof(state));
         _sink = sink;
         _stateBridge = stateBridge;
+        _gestureTime = timeProvider ?? TimeProvider.System;
     }
 
     /// <summary>
@@ -831,6 +833,8 @@ public sealed partial class XsrUiRenderer
         {
             _focused = default;
         }
+        if (BeginSegmentDrag(point)) return true;
+        bool scrollGesture = BeginScrollGesture(point);
         bool pagerGesture = BeginPagerGesture(point);
         XsrUiEntityId entity = InputAt(point);
         XsrUiInput? input = entity.IsAssigned ? _tree.GetComponent<XsrUiInput>(entity) : null;
@@ -852,7 +856,7 @@ public sealed partial class XsrUiRenderer
             _tree.MarkDirty(_focused, XsrUiDirtyKinds.Paint);
             _focused = default;
         }
-        return pagerGesture;
+        return pagerGesture || scrollGesture;
     }
 
     /// <summary>
@@ -861,6 +865,8 @@ public sealed partial class XsrUiRenderer
     /// </summary>
     public bool PointerReleased(XsrUiPoint point)
     {
+        if (EndSegmentDrag()) return true;
+        if (EndScrollGesture(cancelled: false)) return true;
         if (EndPagerGesture()) return true;
         if (!_pressed.IsAssigned || !_tree.IsAlive(_pressed))
         {
@@ -886,7 +892,9 @@ public sealed partial class XsrUiRenderer
     /// </summary>
     public bool PointerMoved(XsrUiPoint point)
     {
-        if (MovePagerGesture(point)) return true;
+        if (MoveSegmentDrag(point)) return true;
+        if (MoveScrollGesture(point)) return true;
+        if (MovePagerGesture(point)) { AbandonScrollGesture(); return true; }
         XsrUiEntityId entity = InputAt(point);
         // Layout can synthesize pointer moves without physical motion. Do not let a
         // capsule change its own target because its or a neighbour's width changed.
@@ -1044,6 +1052,7 @@ public sealed partial class XsrUiRenderer
                 }
                 if (_tree.GetComponent<XsrUiScroll>(entity) is { } scroll)
                 {
+                    StopScrollMotion(entity);
                     double targetX = Math.Max(0, scroll.OffsetX + deltaX);
                     double targetY = Math.Clamp(scroll.OffsetY + deltaY, 0, scroll.MaximumOffsetY);
                     if (Math.Abs(targetX - scroll.OffsetX) > .001
@@ -1070,6 +1079,7 @@ public sealed partial class XsrUiRenderer
     /// </summary>
     public bool HandleKey(XsrUiKey key)
     {
+        if (MoveSegmentForKey(key)) return true;
         return key switch
         {
             XsrUiKey.Tab => FocusNext(),
@@ -1273,7 +1283,7 @@ public sealed partial class XsrUiRenderer
         XsrUiVisualStyle? visualStyle = _tree.GetComponent<XsrUiVisualStyle>(entity);
         XsrUiSelection? selection = _tree.GetComponent<XsrUiSelection>(entity);
         XsrUiInput? input = _tree.GetComponent<XsrUiInput>(entity);
-        bool enabled = accessible && IsEnabled(input);
+        bool enabled = accessible && IsEnabled(input) && (_tree.GetComponent<XsrUiSegmentReveal>(entity)?.Expanded ?? true);
         if (!enabled && input is not null)
         {
             input.IsHovered = false;
@@ -1285,6 +1295,7 @@ public sealed partial class XsrUiRenderer
             if (_focused == entity) _focused = default;
         }
         XsrUiRect? visibleClip = clip is { } parentClip ? Intersect(rect, parentClip) : null;
+        if (_tree.GetComponent<XsrUiSegmentReveal>(entity) is not null) visibleClip = Intersect(rect, visibleClip ?? rect);
         if (visibleClip is { Width: <= 0 } or { Height: <= 0 }) return;
         int entryOrder = -1;
         if (transition is { StaggerEntry: true } && transitionKey is not null && accessible)
@@ -1346,11 +1357,39 @@ public sealed partial class XsrUiRenderer
             overlayAnchor,
             text?.MaxLines ?? 0,
             text?.TrimOverflow ?? false,
-            scrollSnapshot));
+            scrollSnapshot,
+            _tree.GetComponent<XsrUiSegmentReveal>(entity) is { } reveal ? new(reveal.Expanded, reveal.Progress) : null,
+            _tree.GetComponent<XsrUiScrollGesture>(entity) is { } motion ? new(motion.Revision, motion.Dragging, motion.Velocity) : null,
+            IsStableContent(entity)));
+
+        if (_tree.GetComponent<XsrUiSegmentedTrack>(entity) is { } track
+            && _tree.IsAlive(track.Thumb) && _paintRects.TryGetValue(track.Selected.Index, out XsrUiRect segment))
+        {
+            XsrUiRect target = segment with { X = segment.X + offsetX, Y = segment.Y + offsetY };
+            XsrUiTransition thumbTransition = _tree.GetComponent<XsrUiTransition>(track.Thumb)!;
+            bool moved = track.PresentedSelection.IsAssigned && track.PresentedSelection != track.Selected;
+            if (moved && !track.Dragging)
+            {
+                thumbTransition.OffsetX = track.LastTarget.X - target.X;
+                thumbTransition.PresentedOffsetX += thumbTransition.OffsetX;
+                thumbTransition.Key = track.Selected.ToString();
+            }
+            track.PresentedSelection = track.Selected;
+            track.LastTarget = target;
+            if (!track.Dragging) PrepareTransition(track.Thumb, thumbTransition, thumbTransition.Key, rect, clip);
+            thumbTransition.Outgoing = [];
+            XsrUiRect presented = target with { X = track.Dragging ? track.DragX : target.X + thumbTransition.PresentedOffsetX };
+            nodes.Add(new XsrUiSceneNode(track.Thumb, presented, depth + 1, XsrUiSemanticRole.None,
+                null, null, null, false, null, null,
+                _tree.GetComponent<XsrUiVisualStyle>(track.Thumb)?.Snapshot() ?? default,
+                IsEnabled: false, ClipRect: Intersect(visibleClip ?? rect, presented), IsAccessible: false,
+                TransitionKey: thumbTransition.Key, TransitionOffsetX: thumbTransition.OffsetX,
+                TransitionPresentedOffsetX: thumbTransition.PresentedOffsetX));
+        }
 
         XsrUiPager? pageContainer = _tree.GetComponent<XsrUiPager>(entity);
         XsrUiRect? childClip = transition is { MovesSelf: false, OffsetX: not 0 } or { MovesSelf: false, OffsetY: not 0 }
-            || pageContainer is not null || _tree.GetComponent<XsrUiScroll>(entity) is not null
+            || pageContainer is not null || _tree.GetComponent<XsrUiScroll>(entity) is not null || _tree.GetComponent<XsrUiSegmentReveal>(entity) is not null
             ? visibleClip ?? rect
             : clip;
         if (transition is { MovesSelf: false })
@@ -1380,6 +1419,16 @@ public sealed partial class XsrUiRenderer
                 offsetX, offsetY, opacity, overlayMotion, overlayClosing, overlayAnchor);
             pageIndex++;
         }
+    }
+
+    private bool IsStableContent(XsrUiEntityId entity)
+    {
+        while (entity.IsAssigned)
+        {
+            if (_tree.GetComponent<XsrUiStableContent>(entity) is not null) return true;
+            entity = _tree.Parent(entity);
+        }
+        return false;
     }
 
     private static XsrUiRect Intersect(XsrUiRect a, XsrUiRect b)

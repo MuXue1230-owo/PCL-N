@@ -340,6 +340,11 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             _capsuleTargets.Remove(entity);
             _pagerRevisions.Remove(entity);
             _progressTargets.Remove(entity);
+            _segmentTargets.Remove(entity);
+            _scrollRevisions.Remove(entity);
+            _shell.Renderer.FinishScrollInertia(entity);
+            AvaloniaUiMotion.Cancel(this, ("scroll-inertia", entity));
+            AvaloniaUiMotion.Cancel(this, ("segment-reveal", entity));
             AvaloniaUiMotion.Cancel(this, ("capsule", entity));
             AvaloniaUiMotion.Cancel(this, ("progress", entity));
             AvaloniaUiMotion.Cancel(this, ("pager", entity));
@@ -365,6 +370,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             }
 
             control.Apply(node);
+            DriveSegmentReveal(node);
+            DriveScrollInertia(node);
             DriveCapsuleGeometry(node);
             DrivePagerGeometry(node);
             DriveProgressGeometry(node);
@@ -399,6 +406,38 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             XsrUiPointerCursor.Text => _textCursor,
             _ => null,
         };
+    }
+
+    private readonly Dictionary<XsrUiEntityId, long> _scrollRevisions = [];
+    private void DriveScrollInertia(XsrUiSceneNode node)
+    {
+        if (node.ScrollMotion is not { } motion || node.Scroll is not { } scroll) return;
+        if (_scrollRevisions.TryGetValue(node.Entity, out long revision) && revision == motion.Revision) return;
+        _scrollRevisions[node.Entity] = motion.Revision;
+        AvaloniaUiMotion.Cancel(this, ("scroll-inertia", node.Entity));
+        if (motion.Dragging || Math.Abs(motion.Velocity) < 5 || _shell.Renderer.ReducedMotion) return;
+        const double decay = 5;
+        double duration = Math.Clamp(Math.Log(Math.Abs(motion.Velocity) / 5) / decay, .08, 1.4);
+        double fraction = 1 - Math.Exp(-decay * duration);
+        double target = scroll.OffsetY + motion.Velocity / decay * fraction;
+        AvaloniaUiMotion.Animate(this, ("scroll-inertia", node.Entity),
+            () => _shell.Renderer.GetScrollPresentationOffset(node.Entity),
+            value => _shell.Renderer.SetScrollPresentationOffset(node.Entity, value),
+            target, duration * 1000, progress => (1 - Math.Exp(-decay * duration * progress)) / fraction,
+            completed: () => _shell.Renderer.FinishScrollInertia(node.Entity),
+            reducedMotion: () => _shell.Renderer.ReducedMotion);
+    }
+
+    private readonly Dictionary<XsrUiEntityId, bool> _segmentTargets = [];
+    private void DriveSegmentReveal(XsrUiSceneNode node)
+    {
+        if (node.SegmentReveal is not { } reveal) return;
+        if (_segmentTargets.TryGetValue(node.Entity, out bool target) && target == reveal.Expanded) return;
+        _segmentTargets[node.Entity] = reveal.Expanded;
+        AvaloniaUiMotion.AnimateSpring(this, ("segment-reveal", node.Entity),
+            () => _shell.Renderer.GetSegmentRevealProgress(node.Entity),
+            value => _shell.Renderer.SetSegmentRevealProgress(node.Entity, value),
+            reveal.Expanded ? 1 : 0, .25, () => _shell.Renderer.ReducedMotion);
     }
 
     private void SynchronizeNativeFocus(XsrUiScene scene)
@@ -515,7 +554,7 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             for (int child = first; child < scene.Count && (child == index || scene[child].Depth > node.Depth); child++)
             {
                 XsrUiEntityId entity = scene[child].Entity;
-                if (animated.Add(entity) && _controls.TryGetValue(entity, out AvaloniaUiSceneNodeControl? control))
+                if (!scene[child].SuppressEntryAnimation && animated.Add(entity) && _controls.TryGetValue(entity, out AvaloniaUiSceneNodeControl? control))
                     control.RunEnterAnimation();
             }
         }

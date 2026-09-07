@@ -52,7 +52,8 @@ public sealed partial class XsrUiRenderer
     /// <summary>Releases captured gesture state when the platform cancels pointer capture.</summary>
     public bool CancelPointerGesture()
     {
-        bool handled = _gesturePager.IsAssigned || _pressed.IsAssigned;
+        bool scrollHandled = EndScrollGesture(cancelled: true);
+        bool handled = EndSegmentDrag() || scrollHandled || _gesturePager.IsAssigned || _pressed.IsAssigned;
         if (_gesturePager.IsAssigned && _tree.IsAlive(_gesturePager)
             && _tree.GetComponent<XsrUiPager>(_gesturePager) is { } pager)
         {
