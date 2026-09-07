@@ -97,3 +97,10 @@ explicit selection; no legacy source or control was copied. Minecraft choices us
 check icons and a grouped surface; selector labels and version labels retain semantic names.
 Edition cards reduce outer padding from 28 to 12 px, inner padding from 28 to 16 px, and their
 gap from 20 to 12 px. This supersedes previous spacing and underline requirements only.
+
+## Base-loader reachability regression
+
+Selecting a loader is selection, never catalog filtering. All ten base slices and their selector
+buttons remain available for every loader. Only Fabric API and QSL depend on the selected loader,
+so the pager has 10 pages normally and 11 for Fabric or Quilt. Acceptance covers every base
+selection, direct Fabric-to-Forge without a vanilla hop, and clearing the incompatible addon.

@@ -948,17 +948,9 @@ internal sealed class LaunchPageController : IDisposable
         ShowJavaInstallSubpage(target);
     }
 
-    private bool ShouldShowJavaInstallSubpage(JavaInstallSubpage subpage)
-    {
-        if (subpage.RequiresLoader is { } required)
-        {
-            return _selectedInstallLoader == required;
-        }
-
-        return subpage.Loader is null
-            || _selectedInstallLoader == "原版 Minecraft"
-            || _selectedInstallLoader == subpage.Loader;
-    }
+    private bool ShouldShowJavaInstallSubpage(JavaInstallSubpage subpage) =>
+        subpage.RequiresLoader is not { } required
+        || string.Equals(_selectedInstallLoader, required, StringComparison.Ordinal);
 
     private void SetInstallEntityVisible(string key, bool visible)
     {

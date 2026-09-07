@@ -321,11 +321,11 @@ internal static partial class Program
         AssertTrue(IsVisible(fixture.Shell, "JavaFabricPage"));
         AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiPage"));
         AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaForgePage"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaQuiltPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaForgePage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaQuiltPage"));
         AssertFalse(IsVisible(fixture.Shell, "JavaQslPage"));
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertEqual(11, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
 
         Emit(fixture.Intents, "ui.install.addon.fabric-api");
         AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
@@ -339,23 +339,42 @@ internal static partial class Program
             && notification.Message.Contains("Fabric API", StringComparison.Ordinal)
             && notification.Message.Contains("尚未迁移", StringComparison.Ordinal)));
 
-        // Loader pages are mutually exclusive. Return to Minecraft before choosing a second
-        // loader, then verify that the corresponding dependent add-on is the only one exposed.
-        Emit(fixture.Intents, "ui.install.page.minecraft");
-        Emit(fixture.Intents, "ui.install.loader.vanilla");
+        // Base loaders remain reachable directly; only incompatible dependent slices disappear.
+        Emit(fixture.Intents, "ui.install.page.forge");
+        Emit(fixture.Intents, "ui.install.loader.forge");
         AssertTrue(IsVisible(fixture.Shell, "JavaForgePage"));
         AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
+        AssertFalse(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
+            FindEntity(fixture.Shell, "JavaFabricApiSelect"))!.IsSelected);
+        java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertEqual(10, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
         Emit(fixture.Intents, "ui.install.page.quilt");
         Emit(fixture.Intents, "ui.install.loader.quilt");
         AssertTrue(IsVisible(fixture.Shell, "JavaMinecraftPage"));
         AssertTrue(IsVisible(fixture.Shell, "JavaQuiltPage"));
         AssertTrue(IsVisible(fixture.Shell, "JavaQslPage"));
         AssertTrue(IsVisible(fixture.Shell, "JavaQslTab"));
-        AssertFalse(IsVisible(fixture.Shell, "JavaFabricPage"));
+        AssertTrue(IsVisible(fixture.Shell, "JavaFabricPage"));
         AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiPage"));
         Emit(fixture.Intents, "ui.install.addon.qsl");
         AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
             FindEntity(fixture.Shell, "JavaQslSelect"))!.IsSelected);
+
+        foreach (string loader in new[] { "vanilla", "forge", "cleanroom", "neoforge", "fabric", "legacy-fabric", "quilt", "labymod", "optifine", "liteloader" })
+        {
+            Emit(fixture.Intents, "ui.install.loader." + loader);
+            foreach (string key in allJavaInstallPages.Concat(allJavaInstallTabs)
+                .Where(key => !key.StartsWith("JavaFabricApi", StringComparison.Ordinal)
+                    && !key.StartsWith("JavaQsl", StringComparison.Ordinal)))
+                AssertTrue(IsVisible(fixture.Shell, key));
+            AssertEqual(loader == "fabric", IsVisible(fixture.Shell, "JavaFabricApiPage"));
+            AssertEqual(loader == "fabric", IsVisible(fixture.Shell, "JavaFabricApiTab"));
+            AssertEqual(loader == "quilt", IsVisible(fixture.Shell, "JavaQslPage"));
+            AssertEqual(loader == "quilt", IsVisible(fixture.Shell, "JavaQslTab"));
+            java = fixture.Shell.Render(new XsrUiSize(1280, 800));
+            AssertEqual(loader is "fabric" or "quilt" ? 11 : 10,
+                FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        }
 
         Emit(fixture.Intents, "ui.page.back");
         XsrUiScene backAtRoot = fixture.Shell.Render(new XsrUiSize(1280, 800));
