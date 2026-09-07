@@ -294,7 +294,8 @@ public sealed class TaskCenterService
                     new XsrCollectionDelta<TaskCenterEntry, string>(snapshot.Revision, [entry], []));
                 if (result.IsApplied)
                 {
-                    PublishSummary([.. snapshot.Items]);
+                    // The snapshot predates this delta, so fold the upsert in before summarizing.
+                    PublishSummary([.. snapshot.Items.Where(existing => existing.TaskId != entry.TaskId), entry]);
                     return;
                 }
             }
@@ -313,7 +314,7 @@ public sealed class TaskCenterService
                     new XsrCollectionDelta<TaskCenterEntry, string>(snapshot.Revision, [], [taskId]));
                 if (result.IsApplied)
                 {
-                    PublishSummary([.. snapshot.Items]);
+                    PublishSummary([.. snapshot.Items.Where(existing => existing.TaskId != taskId)]);
                     return;
                 }
             }

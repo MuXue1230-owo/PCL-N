@@ -449,9 +449,12 @@ public sealed partial class XsrUiRenderer
             }
 
             // The element paints the fill bar: its rect is the presented fraction of the slot
-            // its parent arranged it into, anchored to the leading edge.
-            double fillWidth = Math.Max(0, Math.Min(1, progress.Presented)) * slotW;
-            _paintRects[entity.Index] = new XsrUiRect(slotX, slotY, fillWidth, slotH);
+            // its parent arranged it into. Leading anchors the fraction to the left edge (the
+            // standard bar); Bottom rises from the bottom edge so round containers fill up.
+            double fill = Math.Max(0, Math.Min(1, progress.Presented));
+            _paintRects[entity.Index] = progress.Anchor == XsrUiProgressFillAnchor.Bottom
+                ? new XsrUiRect(slotX, slotY + (slotH * (1 - fill)), slotW, slotH * fill)
+                : new XsrUiRect(slotX, slotY, slotW * fill, slotH);
             return;
         }
 

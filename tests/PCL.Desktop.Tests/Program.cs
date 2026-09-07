@@ -7,6 +7,7 @@ using PCL.Services.Minecraft.Install;
 using PCL.Services.Minecraft.Launch;
 using PCL.Services.Minecraft.Process;
 using PCL.Services.Settings;
+using PCL.Services.Tasks;
 using PCL.UI.Next;
 using PCL.Xsr;
 using PCL.Xsr.Runtime;
@@ -89,6 +90,8 @@ internal static partial class Program
         ("skin route publishes media through host state into the rendered profile", SkinRoutePublishesIntoRenderedProfile),
         ("delete actions persist only the requested profile and reject stale rows", DeleteActionsPersistAndRejectStaleRows),
         ("trivia rotates every three seconds without foreign tree writes and stops on disposal", TriviaTimerPublishesOnlyStateAndStops),
+        ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
+        ("task bubble fills up from the bottom edge with aggregated progress", TaskBubbleFillsUpFromTheBottomEdge),
         ("operational feedback uses the shared lower-left notification surface", OperationalFeedbackUsesLowerLeftNotification),
         ("notification levels keep exact lifetimes and permanent errors remain closable", NotificationLevelsKeepExactLifetimes),
         ("notifications share one lower-left surface and every level closes manually", NotificationsShareLowerLeftSurfaceAndCloseManually),
@@ -544,6 +547,63 @@ internal static partial class Program
 
     private static string ReadCell(XsrStateStore store, XsrSemanticId key) =>
         (string?)store.ReadAppliedValue(store.Resolve(key)) ?? string.Empty;
+
+    private static void TaskBubbleFollowsSummaryAndYieldsToPage()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        fixture.Shell.Renderer.ReducedMotion = true;
+        TaskCenterService tasks = fixture.Foundation.Host.Tasks;
+
+        // No tasks: the dock slot stays empty.
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+
+        using ITaskCenterTask install = tasks.Begin(new TaskCenterStart(
+            "install:1", "安装 Minecraft 1.20.1", ["版本信息", "游戏文件"]));
+        install.Report("游戏文件", "下载中", 0.4, 2, 5, 100);
+        XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        XsrUiSceneNode root = FindByKey(fixture.Shell, scene, "task-bubble");
+        // The bubble hugs the bottom-right dock inset.
+        AssertTrue(root.Rect.X >= 1280 - 18 - 44 && root.Rect.X <= 1280 - 18);
+        AssertTrue(root.Rect.Y >= 800 - 18 - 44 && root.Rect.Y <= 800 - 18);
+        AssertTrue(root.Label!.Contains("40%", StringComparison.Ordinal));
+
+        // The page owns the corner while it is open.
+        bubble.SetPageVisible(true);
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+        bubble.SetPageVisible(false);
+        AssertTrue(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+
+        // Completion keeps the bubble visible and filled until acknowledged.
+        install.Complete("安装完成");
+        scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(Math.Abs(fixture.Shell.Tree.GetComponent<XsrUiProgress>(bubble.FillEntity)!.Target - 1d) < 0.0001);
+
+        AssertTrue(tasks.Dismiss("install:1"));
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+    }
+
+    private static void TaskBubbleFillsUpFromTheBottomEdge()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        TaskCenterService tasks = fixture.Foundation.Host.Tasks;
+
+        using ITaskCenterTask install = tasks.Begin(new TaskCenterStart(
+            "install:2", "安装", ["游戏文件"]));
+        install.Report("游戏文件", "下载中", 0.5, 1, 2, 0);
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+
+        XsrUiProgress fill = fixture.Shell.Tree.GetComponent<XsrUiProgress>(bubble.FillEntity)!;
+        AssertEqual(XsrUiProgressFillAnchor.Bottom, fill.Anchor);
+        AssertTrue(Math.Abs(fill.Target - 0.5) < 0.0001);
+
+        // The presented fill is the renderer-owned catch-up value; with the animation clock
+        // parked it must still be clamped between zero and the target.
+        AssertTrue(fill.Presented >= 0d && fill.Presented <= fill.Target + 0.0001);
+    }
 
     private sealed class LaunchPageFixture : IDisposable
     {

@@ -233,6 +233,7 @@ internal static class Program
         using DesktopFeedbackService feedback = new();
         using DesktopFeedbackPresenter feedbackPresenter = new(
             shell, uiIntents, feedback, runtime.Host.StateStore);
+        using DesktopTaskBubblePresenter taskBubble = new(shell, runtime.Host.StateStore);
 
         // The launch page is the first product vertical slice: it routes navigation intents to
         // pages inside the shell content host and dispatches the real launch command.

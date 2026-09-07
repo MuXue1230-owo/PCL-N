@@ -55,6 +55,7 @@ internal static class LaunchPageState
         ArgumentNullException.ThrowIfNull(builder);
         AccountFormState.DeclareState(builder);
         DesktopFeedbackState.DeclareState(builder);
+        TaskBubbleState.DeclareState(builder);
         builder.Cell<string>(ProfileNameKey, OwnerName);
         builder.Cell<string>(ProfileKindKey, OwnerName);
         builder.Cell<bool>(AccountPickerKey, OwnerName);
