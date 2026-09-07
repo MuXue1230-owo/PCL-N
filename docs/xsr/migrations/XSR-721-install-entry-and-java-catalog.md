@@ -87,3 +87,13 @@ Supersedes the visual revision above: input and install action return to the top
 Component tabs are horizontal text labels with a two-pixel active underline, followed by a
 one-pixel divider. The Minecraft catalog is a plain list with a leading selected checkmark.
 Version values remain the existing catalog values, not illustrative mockup version numbers.
+
+## Home-aligned install selection
+
+The horizontal selectors now reuse the home profile-action capsule palette, corner radii and
+renderer press/hover behavior instead of underlines. The top version input and install action
+remain unchanged. The legacy install view was inspected read-only for grouped version lists and
+explicit selection; no legacy source or control was copied. Minecraft choices use fixed-width
+check icons and a grouped surface; selector labels and version labels retain semantic names.
+Edition cards reduce outer padding from 28 to 12 px, inner padding from 28 to 16 px, and their
+gap from 20 to 12 px. This supersedes previous spacing and underline requirements only.

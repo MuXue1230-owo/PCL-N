@@ -894,7 +894,7 @@ internal sealed class LaunchPageController : IDisposable
         ApplyVisual(entities["JavaInstallEntryRow"], XsrUiColor.Transparent, PrimaryText,
             XsrUiCornerRadii.Surface);
 
-        ApplyVisual(entities["JavaInstallDivider"], CardBorder, PrimaryText, 0);
+        ApplyVisual(entities["JavaMinecraftVersions"], new(255, 255, 255), PrimaryText, XsrUiCornerRadii.Surface, border: CardBorder);
         foreach (JavaInstallSubpage subpage in JavaInstallSubpages)
         {
             if (entities.TryGetValue(subpage.PageKey, out XsrUiEntityId page))
@@ -1028,15 +1028,11 @@ internal sealed class LaunchPageController : IDisposable
         }
 
         ApplyVisual(entity,
-            XsrUiColor.Transparent,
-            active ? InstallJavaAccent : SecondaryText,
-            XsrUiCornerRadii.Inset,
-            border: null,
-            hover: active ? InstallJavaTint : PickerBackground);
-        StyleText(entity, active ? InstallJavaAccent : SecondaryText, 13, active ? 650 : 500);
-        StyleText(entities, key + "Text", active ? InstallJavaAccent : SecondaryText, 14, active ? 650 : 500);
-        if (entities.TryGetValue(key + "Underline", out XsrUiEntityId underline))
-            ApplyVisual(underline, active ? InstallJavaAccent : XsrUiColor.Transparent, PrimaryText, 0);
+            active ? DesktopUiPalette.CapsuleBackground : ProfileSurface,
+            active ? BadgeText : DesktopUiPalette.CapsuleForeground,
+            XsrUiCornerRadii.Pill(36),
+            hover: DesktopUiPalette.CapsuleHover, hoverExpand: true);
+        StyleText(entity, active ? BadgeText : DesktopUiPalette.CapsuleForeground, 13, active ? 650 : 500);
         AlignText(entity, XsrUiTextAlignment.Center);
         XsrUiSelection selection = _shell.Tree.GetComponent<XsrUiSelection>(entity) ?? new XsrUiSelection();
         selection.IsSelected = active;
@@ -1113,11 +1109,11 @@ internal sealed class LaunchPageController : IDisposable
             bool selected = key == selectedKey;
             if (key.StartsWith("JavaVersion", StringComparison.Ordinal))
             {
-                string version = key switch { "JavaVersion1211" => "1.21.1", "JavaVersion1206" => "1.20.6", _ => "1.20.1" };
-                _shell.Tree.GetComponent<XsrUiText>(entity)!.Content = (selected ? "✓   " : "     ") + version;
-                ApplyVisual(entity, XsrUiColor.Transparent, PrimaryText, 0, hover: PickerBackground);
-                StyleText(entity, PrimaryText, 15, selected ? 600 : 400);
-                AlignText(entity, XsrUiTextAlignment.Start);
+                ApplyVisual(entity, selected ? ProfileSurface : XsrUiColor.Transparent, PrimaryText,
+                    XsrUiCornerRadii.Inset, hover: PickerBackground);
+                StyleText(entities, key + "Name", selected ? BadgeText : PrimaryText, 15, selected ? 600 : 400);
+                XsrUiEntityId check = entities[key + "Check"];
+                ApplyVisual(check, XsrUiColor.Transparent, selected ? BadgeText : XsrUiColor.Transparent, 0);
                 XsrUiSelection rowSelection = _shell.Tree.GetComponent<XsrUiSelection>(entity) ?? new XsrUiSelection();
                 rowSelection.IsSelected = selected;
                 _shell.Tree.SetComponent(entity, rowSelection);

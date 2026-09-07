@@ -238,6 +238,7 @@ internal static partial class Program
         AssertClose(javaChoice.Rect.Width, bedrockChoice.Rect.Width);
         AssertClose(javaChoice.Rect.Height, bedrockChoice.Rect.Height);
         AssertClose(javaChoice.Rect.Y, bedrockChoice.Rect.Y);
+        AssertClose(12, bedrockChoice.Rect.X - javaChoice.Rect.X - javaChoice.Rect.Width);
         AssertTrue(javaChoice.Rect.Width > 450 && javaChoice.Rect.Height > 500);
         AssertFalse(HasKey(fixture.Shell, root, "InstallTitle"));
         AssertFalse(HasKey(fixture.Shell, root, "InstallDescription"));
@@ -260,9 +261,7 @@ internal static partial class Program
         AssertEqual(0, pager.Pager!.Value.PageIndex);
         XsrUiSceneNode rail = FindByKey(fixture.Shell, java, "JavaInstallPagerTabs");
         AssertTrue(pager.Rect.Y >= rail.Rect.Y + rail.Rect.Height);
-        XsrUiSceneNode underline = FindByKey(fixture.Shell, java, "JavaMinecraftTabUnderline");
-        AssertTrue(underline.Rect.Width > 40);
-        AssertClose(2, underline.Rect.Height);
+        AssertEqual(XsrUiCornerRadii.Pill(36), FindByKey(fixture.Shell, java, "JavaMinecraftTab").VisualStyle.CornerRadius);
         AssertTrue(input.Rect.Y + input.Rect.Height <= rail.Rect.Y);
         foreach (XsrUiSize size in new[] { new XsrUiSize(1024, 600), new XsrUiSize(850, 520) })
         {
@@ -307,8 +306,10 @@ internal static partial class Program
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaInstallVersionInput").TextInput!.Value.DisplayText);
         AssertTrue(FindByKey(fixture.Shell, java, "JavaVersion1206").IsSelected);
-        AssertEqual("✓   1.20.6", FindByKey(fixture.Shell, java, "JavaVersion1206").Text);
-        AssertEqual("     1.21.1", FindByKey(fixture.Shell, java, "JavaVersion1211").Text);
+        AssertEqual("1.20.6", FindByKey(fixture.Shell, java, "JavaVersion1206Name").Text);
+        AssertEqual((byte)255, FindByKey(fixture.Shell, java, "JavaVersion1206Check").VisualStyle.Foreground.Alpha);
+        AssertEqual((byte)0, FindByKey(fixture.Shell, java, "JavaVersion1211Check").VisualStyle.Foreground.Alpha);
+        AssertEqual("1.21.1", FindByKey(fixture.Shell, java, "JavaVersion1211Name").Text);
 
         Emit(fixture.Intents, "ui.install.page.fabric");
         AssertTrue(fixture.Shell.Tree.GetComponent<XsrUiSelection>(
