@@ -92,6 +92,8 @@ internal static partial class Program
         ("trivia rotates every three seconds without foreign tree writes and stops on disposal", TriviaTimerPublishesOnlyStateAndStops),
         ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
         ("task bubble fills up from the bottom edge with aggregated progress", TaskBubbleFillsUpFromTheBottomEdge),
+        ("task center page reconciles cards and routes cancel dismiss and clear", TaskCenterPageReconcilesCardsAndRoutesActions),
+        ("task center page yields the bubble and reclaims it on back", TaskCenterPageYieldsBubbleAndReclaimsOnBack),
         ("operational feedback uses the shared lower-left notification surface", OperationalFeedbackUsesLowerLeftNotification),
         ("notification levels keep exact lifetimes and permanent errors remain closable", NotificationLevelsKeepExactLifetimes),
         ("notifications share one lower-left surface and every level closes manually", NotificationsShareLowerLeftSurfaceAndCloseManually),
@@ -603,6 +605,86 @@ internal static partial class Program
         // The presented fill is the renderer-owned catch-up value; with the animation clock
         // parked it must still be clamped between zero and the target.
         AssertTrue(fill.Presented >= 0d && fill.Presented <= fill.Target + 0.0001);
+    }
+
+    private static void TaskCenterPageReconcilesCardsAndRoutesActions()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        using TaskCenterRuntime taskCenter = TaskCenterRuntimeComposer.Compose(fixture.Foundation.Host);
+        using TaskCenterController controller = new(
+            fixture.Shell, fixture.Intents, taskCenter.Commands, fixture.Store, bubble);
+        fixture.Shell.Renderer.ReducedMotion = true;
+        TaskCenterService tasks = fixture.Foundation.Host.Tasks;
+
+        using ITaskCenterTask install = tasks.Begin(new TaskCenterStart(
+            "install:1", "安装 Minecraft 1.20.1", ["版本信息", "游戏文件"]));
+        install.Report("游戏文件", "下载中", 0.5, 2, 5, 2048);
+        using ITaskCenterTask skin = tasks.Begin(new TaskCenterStart(
+            "download:1", "下载皮肤", ["下载文件"]));
+        skin.Complete("已保存");
+
+        Emit(fixture.Intents, "ui.tasks.open");
+        XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(controller.IsStaged);
+        AssertTrue(HasKey(fixture.Shell, scene, "task-card:install:1"));
+        AssertTrue(HasKey(fixture.Shell, scene, "task-card:download:1"));
+        AssertTrue(scene.Nodes.Any(node => node.Text is not null && node.Text.Contains(
+            "安装 Minecraft 1.20.1", StringComparison.Ordinal)));
+        AssertTrue(scene.Nodes.Any(node => node.Text is not null && node.Text.Contains("游戏文件 · 下载中", StringComparison.Ordinal)));
+        AssertTrue(scene.Nodes.Any(node => node.Text is not null && node.Text.Contains("50%", StringComparison.Ordinal)));
+        // The header aggregates live work; the finished task keeps its card until dismissed.
+        AssertTrue(FindByKey(fixture.Shell, scene, "TaskCenterSummary").Text!.Contains(
+            "1 个任务进行中", StringComparison.Ordinal));
+
+        // Cancel routes through the typed command to the owning token.
+        XsrUiEntityId installAction = controller.CardAction("install:1");
+        Emit(fixture.Intents, "ui.tasks.card.cancel", installAction);
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(install.CancellationToken.IsCancellationRequested);
+        install.Canceled();
+
+        // Dismiss removes a terminal card; clear-finished sweeps the rest.
+        scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        Emit(fixture.Intents, "ui.tasks.card.dismiss", controller.CardAction("download:1"));
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-card:download:1"));
+        Emit(fixture.Intents, "ui.tasks.clear-finished");
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-card:install:1"));
+        AssertTrue(FindByKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "TaskCenterSummary")
+            .Text!.Contains("暂无任务", StringComparison.Ordinal));
+    }
+
+    private static void TaskCenterPageYieldsBubbleAndReclaimsOnBack()
+    {
+        using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
+        fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        using TaskCenterRuntime taskCenter = TaskCenterRuntimeComposer.Compose(fixture.Foundation.Host);
+        using TaskCenterController controller = new(
+            fixture.Shell, fixture.Intents, taskCenter.Commands, fixture.Store, bubble);
+        fixture.Shell.Renderer.ReducedMotion = true;
+        TaskCenterService tasks = fixture.Foundation.Host.Tasks;
+        using ITaskCenterTask install = tasks.Begin(new TaskCenterStart("install:1", "安装", ["游戏文件"]));
+
+        AssertTrue(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+        Emit(fixture.Intents, "ui.tasks.open");
+        // The page owns the corner while staged: bubble hidden, card visible.
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
+        AssertTrue(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-card:install:1"));
+
+        // The shared back affordance pops the page; the next frame reconciles staged state
+        // and the bubble reclaims the corner.
+        Emit(fixture.Intents, "ui.page.back");
+        XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertFalse(controller.IsStaged);
+        AssertFalse(HasKey(fixture.Shell, scene, "task-card:install:1"));
+        // The bubble reconciles on the frame after the controller unstaged the page (the
+        // unstage happens during this controller's FramePreparing, after the bubble's).
+        scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(HasKey(fixture.Shell, scene, "task-bubble"));
     }
 
     private sealed class LaunchPageFixture : IDisposable

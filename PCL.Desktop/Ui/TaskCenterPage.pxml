@@ -1,0 +1,31 @@
+<Page xmlns="https://pcln.dev/pxml/2026" Key="TaskCenterPage" Label="任务中心">
+  <!--
+    The task center page: one quiet surface for every background task the foundation tracks.
+    The header carries the aggregate (progress, speed, remaining files) plus the bulk cleanup;
+    the body reconciles one card per task entry at frame time. The empty state names the
+    destination so the page is never a blank well (wayfinding), and the bubble yields while
+    this page owns the corner.
+  -->
+  <StackPanel Key="TaskCenterRoot" Orientation="Vertical" Weight="1">
+    <StackPanel Key="TaskCenterHeader" Orientation="Horizontal" Margin="0,0,0,10">
+      <Image Key="TaskCenterHeaderIcon" Source="lucide/list-checks" Width="22" Height="22"
+             Margin="0,2,10,0" />
+      <Text Key="TaskCenterTitle" Content="任务" Height="26" Weight="1" />
+      <Button Key="TaskCenterClear" Content="清除已完成" Label="清除已完成的任务"
+              Command="ui.tasks.clear-finished" Height="32" />
+    </StackPanel>
+    <Text Key="TaskCenterSummary" Content="暂无任务" Height="18" Margin="0,0,0,14" />
+    <ContentHost Key="TaskCenterBody" Weight="1">
+      <StackPanel Key="TaskCenterEmpty" Orientation="Vertical" Spacing="8"
+                  HorizontalAlignment="Center" VerticalAlignment="Center">
+        <Image Key="TaskCenterEmptyIcon" Source="lucide/inbox" Width="36" Height="36"
+               HorizontalAlignment="Center" />
+        <Text Key="TaskCenterEmptyTitle" Content="暂无任务" Height="20" HorizontalAlignment="Center" />
+        <Text Key="TaskCenterEmptyHint" Content="安装、下载等后台任务会在这里汇报进度。"
+              Height="16" HorizontalAlignment="Center" />
+      </StackPanel>
+      <StackPanel Key="TaskCenterList" Orientation="Vertical" Spacing="10" IsVisible="false"
+                  Scroll="true" />
+    </ContentHost>
+  </StackPanel>
+</Page>

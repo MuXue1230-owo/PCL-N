@@ -23,6 +23,12 @@ public static class TaskCenterRuntimeComposer
             (command, _) => ValueTask.FromResult(host.Tasks.Dismiss(command.TaskId)
                 ? PCL.Xsr.XsrResult.Success()
                 : PCL.Xsr.XsrResult.Failure(PCL.Xsr.XsrRuntimeErrors.TargetNotFound("任务不存在或已结束。"))));
+        commands.Register<TaskCenterClearCommand>(TaskCenterRoutes.ClearFinished,
+            (_, _) =>
+            {
+                host.Tasks.ClearFinished();
+                return ValueTask.FromResult(PCL.Xsr.XsrResult.Success());
+            });
         var dispatchObserver = observer ?? new Observer();
         return new TaskCenterRuntime(commands.Build(dispatchObserver));
     }
@@ -35,3 +41,4 @@ public static class TaskCenterRuntimeComposer
 
 public sealed record TaskCenterCancelCommand(string TaskId);
 public sealed record TaskCenterDismissCommand(string TaskId);
+public sealed record TaskCenterClearCommand;

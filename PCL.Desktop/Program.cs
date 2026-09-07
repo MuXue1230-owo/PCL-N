@@ -234,6 +234,9 @@ internal static class Program
         using DesktopFeedbackPresenter feedbackPresenter = new(
             shell, uiIntents, feedback, runtime.Host.StateStore);
         using DesktopTaskBubblePresenter taskBubble = new(shell, runtime.Host.StateStore);
+        using TaskCenterRuntime taskCenter = TaskCenterRuntimeComposer.Compose(host, operationLog.Dispatch);
+        using TaskCenterController taskCenterPage = new(
+            shell, uiIntents, taskCenter.Commands, runtime.Host.StateStore, taskBubble);
 
         // The launch page is the first product vertical slice: it routes navigation intents to
         // pages inside the shell content host and dispatches the real launch command.

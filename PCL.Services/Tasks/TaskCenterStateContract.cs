@@ -55,4 +55,5 @@ public static class TaskCenterRoutes
 {
     public static readonly XsrSemanticId Cancel = XsrSemanticId.Parse("tasks.center.cancel");
     public static readonly XsrSemanticId Dismiss = XsrSemanticId.Parse("tasks.center.dismiss");
+    public static readonly XsrSemanticId ClearFinished = XsrSemanticId.Parse("tasks.center.clear");
 }

@@ -23,6 +23,8 @@
     <EmbeddedResource Include="Ui/VersionDirectoryDropdown.pxml" />
     <EmbeddedResource Include="Ui/VersionDirectoryRow.pxml" />
     <EmbeddedResource Include="Ui/LaunchingPage.pxml" />
+    <EmbeddedResource Include="Ui/TaskCenterPage.pxml" />
+    <EmbeddedResource Include="Ui/TaskCard.pxml" />
     <EmbeddedResource Include="Ui/Notification.pxml" />
     <EmbeddedResource Include="Ui/Dialog.pxml" />
     <EmbeddedResource Include="Assets/icon.png" />
