@@ -38,3 +38,22 @@ typed routes; the bubble reclaims the corner the frame after the page leaves the
 - Legacy stage plan names are kept (版本信息 / 游戏文件 / 加载器 / 附加组件 / 完成) so
   planner keyword resolution behaves identically.
 - Speed formatting keeps the legacy unit ladder (B/s → GB/s, F1 below the first unit).
+
+## Presentation refresh (2026-09-09)
+
+The corner task control uses the launch page's light neutral surface, compact count/status and a
+thin progress track. Its exit can reverse immediately when work becomes visible again. The task
+page separates title, current stage, progress and actions; detailed steps expand on demand instead
+of occupying every card. Presentation changes remain renderer-thread-only and unchanged snapshots
+must leave the scene clean. Task ownership and cancel/dismiss routes remain Service contracts.
+
+## Capability boundary corrections (2026-09-09, review round)
+
+- **Retention cap covers every terminal kind.** All four terminalizations (complete, fail,
+  cancel, abandon) commit through one `CommitTerminal` that disposes the token, publishes the
+  terminal entry, and bounds terminal history to 30 — the cap is a capability contract over
+  `_registrations` and the shared state collection, not a UI nicety.
+- **CanCancel is enforced at the service boundary.** `RequestCancel` rejects a protected task
+  outright and returns a distinguishable `NotCancelable` result; the route layer maps it to
+  `tasks.task_not_cancelable` so an enforced boundary is never disguised as an unknown id.
+  Hiding the button is presentation, not protection.

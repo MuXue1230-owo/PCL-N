@@ -52,7 +52,7 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
         JsonObject baseManifest = manifests.Inherited.Count > 0 ? manifests.Inherited[^1] : manifests.Current;
         string baseId = baseManifest["id"]?.ToString() ?? instance.VersionId;
 
-        List<(string[] Sources, string Destination)> missing = [];
+        List<PendingFile> missing = [];
 
         MinecraftClientJarDownloadPlan clientPlan = MinecraftClientDownloadPlanner.CreateClientJarPlan(
             new MinecraftClientJarDownloadPlanRequest
@@ -65,7 +65,7 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
         {
             AddIfMissing(missing,
                 MinecraftDownloadSourcePlanner.GetLauncherOrMetaSources(client.Url, true),
-                client.LocalPath);
+                client.LocalPath, client.ActualSize, client.Sha1);
         }
 
         MinecraftAssetIndexDownloadPlan indexPlan = MinecraftClientDownloadPlanner.CreateAssetIndexPlan(
@@ -79,11 +79,11 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
         {
             AddIfMissing(missing,
                 MinecraftDownloadSourcePlanner.GetLauncherOrMetaSources(indexPlan.Url!, true),
-                indexPath);
+                indexPath, null, null);
         }
 
         // Libraries accumulate across the whole chain: the child's overrides win.
-        Dictionary<string, (string Url, string? Sha1)> libraries = new(MinecraftLibraryService.PathComparer);
+        Dictionary<string, (string Url, string? Sha1, long Size)> libraries = new(MinecraftLibraryService.PathComparer);
         foreach (JsonObject manifest in new[] { manifests.Current }.Concat(manifests.Inherited))
         {
             foreach (MinecraftLibraryToken library in MinecraftLibraryResolver.Resolve(
@@ -102,11 +102,11 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
                     continue;
                 }
 
-                libraries[library.LocalPath] = (library.Url, library.Sha1);
+                libraries[library.LocalPath] = (library.Url, library.Sha1, library.Size);
             }
         }
 
-        foreach ((string localPath, (string url, _)) in libraries)
+        foreach ((string localPath, (string url, string? sha1, long size)) in libraries)
         {
             string[] sources = MinecraftDownloadSourcePlanner.GetLibrarySources(url, true);
             if (!sources.Contains(url, StringComparer.Ordinal))
@@ -114,7 +114,7 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
                 sources = [.. sources, url];
             }
 
-            AddIfMissing(missing, sources, localPath);
+            AddIfMissing(missing, sources, localPath, size > 0 ? size : null, sha1);
         }
 
         // Assets are planned from the index document, so fetch the index first when missing,
@@ -139,20 +139,16 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
                         MinecraftRootDirectory = root,
                         InstanceDirectory = instance.DirectoryPath,
                     });
-                Dictionary<string, MinecraftAssetFileState> states = [];
-                foreach (MinecraftAssetToken asset in assets)
-                {
-                    states[asset.LocalPath] = new MinecraftAssetFileState(File.Exists(asset.LocalPath), 0);
-                }
 
-                foreach (MinecraftAssetDownloadFile file in MinecraftAssetDownloadPlanner.CreatePlan(
-                    new MinecraftAssetDownloadPlanRequest { Assets = assets, CheckHash = false, ExistingFiles = states })
-                    .Files)
+                // Every object is a candidate; the shared verifier decides reuse by hash.
+                foreach (MinecraftAssetToken asset in assets)
                 {
                     AddIfMissing(missing,
                         MinecraftDownloadSourcePlanner.GetAssetSources(
-                            MinecraftAssetListResolver.GetObjectUrl(file.Hash), true),
-                        file.LocalPath);
+                            MinecraftAssetListResolver.GetObjectUrl(asset.Hash), true),
+                        asset.LocalPath,
+                        asset.Size > 0 ? asset.Size : null,
+                        asset.Hash);
                 }
             }
         }
@@ -165,33 +161,44 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
 
         _log?.Info("Launch", $"File completion repairing {missing.Count} missing file(s).");
         int done = 0;
-        foreach ((string[] sources, string destination) in missing)
+        foreach (PendingFile file in missing)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (File.Exists(destination) && new FileInfo(destination).Length > 0)
+            if (await MinecraftFileVerifier.VerifyAsync(file.Expected, cancellationToken).ConfigureAwait(false))
             {
                 done++;
                 continue;
             }
 
-            Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(file.Destination)!);
             int filesBefore = done;
             DownloadTransferResult transfer = await TransferAsync(
-                sources, destination, cancellationToken,
+                file.Sources, file.Destination, cancellationToken,
                 progress: bytes => ReportProgress(progress, method, filesBefore, missing.Count, bytes))
                 .ConfigureAwait(false);
-            if (!transfer.Success)
+            bool verified = transfer.Success
+                && await MinecraftFileVerifier.VerifyAsync(file.Expected, cancellationToken).ConfigureAwait(false);
+            if (!verified)
             {
-                // Mirror rate limits are bursty; one short retry has saved whole launches.
+                // Bursty mirror rate limits and truncated commits: delete the bad artifact
+                // and retry once before failing the launch.
+                if (transfer.Success)
+                {
+                    TryDelete(file.Destination);
+                }
+
                 await Task.Delay(FileRetryDelay, cancellationToken).ConfigureAwait(false);
-                transfer = await TransferAsync(sources, destination, cancellationToken)
+                transfer = await TransferAsync(file.Sources, file.Destination, cancellationToken)
                     .ConfigureAwait(false);
+                verified = transfer.Success
+                    && await MinecraftFileVerifier.VerifyAsync(file.Expected, cancellationToken).ConfigureAwait(false);
             }
 
-            if (!transfer.Success)
+            if (!verified)
             {
+                TryDelete(file.Destination);
                 throw new InvalidOperationException(
-                    $"补全文件失败：{Path.GetFileName(destination)}（{(transfer.Errors.Count > 0 ? transfer.Errors[0].Message : "未知错误")}）");
+                    $"补全文件失败：{Path.GetFileName(file.Destination)}（{(transfer.Errors.Count > 0 ? transfer.Errors[0].Message : (transfer.Success ? "校验未通过" : "未知错误"))}");
             }
 
             done++;
@@ -310,24 +317,37 @@ public sealed class MinecraftLaunchFileCompletion : IDisposable
             progress,
             cancellationToken);
 
-    private static void AddIfMissing(
-        List<(string[] Sources, string Destination)> missing, string[] sources, string destination)
+    private sealed record PendingFile(string[] Sources, string Destination, long? Size, string? Sha1)
     {
-        if (File.Exists(destination) && new FileInfo(destination).Length > 0)
-        {
-            return;
-        }
+        public MinecraftExpectedFile Expected => new(Destination, Size, Sha1);
+    }
 
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Cleanup must not kill the launch; a leftover bad file fails the next
+            // verification and is re-downloaded then.
+        }
+    }
+
+    private static void AddIfMissing(
+        List<PendingFile> missing, string[] sources, string destination, long? size, string? sha1)
+    {
         for (int index = 0; index < missing.Count; index++)
         {
             if (MinecraftLibraryService.PathComparer.Equals(missing[index].Destination, destination))
             {
-                missing[index] = (sources, destination);
+                missing[index] = new(sources, destination, size, sha1);
                 return;
             }
         }
 
-        missing.Add((sources, destination));
+        missing.Add(new(sources, destination, size, sha1));
     }
 
     public void Dispose() => _http.Dispose();

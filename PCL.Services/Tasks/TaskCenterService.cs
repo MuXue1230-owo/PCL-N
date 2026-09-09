@@ -71,8 +71,12 @@ public sealed class TaskCenterService
         return new TaskHandle(this, registration);
     }
 
-    /// <summary>Cancels a running task by id. Returns false when the id is unknown or terminal.</summary>
-    public bool RequestCancel(string taskId)
+    /// <summary>
+    /// Cancels a running task by id. CanCancel=false is enforced HERE, at the capability
+    /// boundary — the UI hiding the button is presentation, not protection. The three
+    /// outcomes stay distinguishable so routes never disguise not-cancelable as missing.
+    /// </summary>
+    public TaskCenterCancelResult RequestCancel(string taskId)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(taskId);
         lock (_gate)
@@ -80,11 +84,16 @@ public sealed class TaskCenterService
             if (!_registrations.TryGetValue(taskId, out Registration? registration)
                 || registration.Entry.IsTerminal)
             {
-                return false;
+                return TaskCenterCancelResult.NotFound;
+            }
+
+            if (!registration.Entry.CanCancel)
+            {
+                return TaskCenterCancelResult.NotCancelable;
             }
 
             registration.Cancellation.Cancel();
-            return true;
+            return TaskCenterCancelResult.Canceled;
         }
     }
 
@@ -181,9 +190,7 @@ public sealed class TaskCenterService
             registration.Released = true;
         }
 
-        registration.Cancellation.Dispose();
-        ApplyEntry(updated);
-        EvictOldTerminalEntries();
+        CommitTerminal(registration, updated);
     }
 
     internal void Fail(Registration registration, string message)
@@ -202,8 +209,7 @@ public sealed class TaskCenterService
             registration.Released = true;
         }
 
-        registration.Cancellation.Dispose();
-        ApplyEntry(updated);
+        CommitTerminal(registration, updated);
     }
 
     internal void MarkCanceled(Registration registration)
@@ -221,8 +227,7 @@ public sealed class TaskCenterService
             registration.Released = true;
         }
 
-        registration.Cancellation.Dispose();
-        ApplyEntry(updated);
+        CommitTerminal(registration, updated);
     }
 
     /// <summary>A released handle whose task never reached a terminal state must not read as running forever.</summary>
@@ -241,8 +246,7 @@ public sealed class TaskCenterService
             registration.Released = true;
         }
 
-        registration.Cancellation.Dispose();
-        ApplyEntry(updated);
+        CommitTerminal(registration, updated);
     }
 
     private static TaskCenterEntry Terminal(
@@ -257,6 +261,18 @@ public sealed class TaskCenterService
             SpeedBytesPerSecond = 0,
             Steps = entry.Steps is { } steps ? TaskStagePlanner.Advance(steps, "完成", detail, 1d) : null,
         };
+
+    /// <summary>
+    /// Every terminalization commits through here: dispose the token, publish the terminal
+    /// entry, then bound the terminal history. The retention cap is a capability contract
+    /// (≤30 terminal entries), not a UI nicety, so Failed/Canceled/Abandoned are bounded too.
+    /// </summary>
+    private void CommitTerminal(Registration registration, TaskCenterEntry updated)
+    {
+        registration.Cancellation.Dispose();
+        ApplyEntry(updated);
+        EvictOldTerminalEntries();
+    }
 
     private void EvictOldTerminalEntries()
     {

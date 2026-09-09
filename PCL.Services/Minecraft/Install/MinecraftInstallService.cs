@@ -186,7 +186,7 @@ public sealed class MinecraftInstallService : IDisposable
         {
             gameFiles.Add(new PlannedFile(
                 MinecraftDownloadSourcePlanner.GetLauncherOrMetaSources(client.Url, true),
-                client.LocalPath, client.Sha1, 0));
+                client.LocalPath, client.Sha1, client.ActualSize));
         }
 
         gameFiles.AddRange(LibraryFiles(MinecraftLibraryResolver.Resolve(
@@ -261,7 +261,7 @@ public sealed class MinecraftInstallService : IDisposable
             gameFiles.Add(new PlannedFile(
                 MinecraftDownloadSourcePlanner.GetAssetSources(
                     MinecraftAssetListResolver.GetObjectUrl(file.Hash), true),
-                file.LocalPath, file.Hash, 0));
+                file.LocalPath, file.Hash, file.ActualSize));
         }
 
         if (command.Addons is { Count: > 0 })
@@ -269,13 +269,14 @@ public sealed class MinecraftInstallService : IDisposable
             string modsDirectory = Path.Combine(root, "mods");
             foreach (MinecraftInstallAddon addon in command.Addons)
             {
-                InstallDownload download = await ResolveAddonDownloadAsync(addon, token).ConfigureAwait(false);
+                InstallDownload download = await ResolveAddonDownloadAsync(
+                    game, addon, token).ConfigureAwait(false);
                 Directory.CreateDirectory(modsDirectory);
                 addonFiles.Add(new PlannedFile(
                     [download.Url.ToString()],
                     Path.Combine(modsDirectory, SafeName(download.FileName)),
                     download.Sha1,
-                    0));
+                    download.Size));
             }
         }
 
@@ -293,10 +294,20 @@ public sealed class MinecraftInstallService : IDisposable
             }
         }
 
-        List<(string Stage, PlannedFile File)> allFiles = [.. planned
-            .Where(pair => !File.Exists(pair.File.Destination) || new FileInfo(pair.File.Destination).Length == 0)
-            .GroupBy(pair => pair.File.Destination, MinecraftLibraryService.PathComparer)
-            .Select(static group => group.First())];
+        // A file is reusable only when it PASSES verification — existence-with-content used
+        // to certify truncated or corrupted artifacts as complete installs.
+        List<(string Stage, PlannedFile File)> allFiles = [];
+        foreach (string destination in planned
+            .Select(static pair => pair.File.Destination)
+            .Distinct(MinecraftLibraryService.PathComparer))
+        {
+            (string Stage, PlannedFile File) candidate = planned.First(
+                pair => MinecraftLibraryService.PathComparer.Equals(pair.File.Destination, destination));
+            if (!await MinecraftFileVerifier.VerifyAsync(candidate.File.Expected, token).ConfigureAwait(false))
+            {
+                allFiles.Add(candidate);
+            }
+        }
         int totalFiles = allFiles.Count;
         int doneFiles = 0;
         foreach ((string Stage, PlannedFile File) pair in allFiles)
@@ -305,7 +316,7 @@ public sealed class MinecraftInstallService : IDisposable
             PlannedFile file = pair.File;
             {
                 token.ThrowIfCancellationRequested();
-                if (File.Exists(file.Destination) && new FileInfo(file.Destination).Length > 0)
+                if (await MinecraftFileVerifier.VerifyAsync(file.Expected, token).ConfigureAwait(false))
                 {
                     doneFiles++;
                     continue;
@@ -323,19 +334,30 @@ public sealed class MinecraftInstallService : IDisposable
                 };
                 DownloadTransferResult transfer = await DownloadPlannedFileAsync(
                     request, task, stage, stageLabel, doneFiles, totalFiles, token).ConfigureAwait(false);
-                if (!transfer.Success)
+                bool verified = transfer.Success
+                    && await MinecraftFileVerifier.VerifyAsync(file.Expected, token).ConfigureAwait(false);
+                if (!verified)
                 {
-                    // Mirror rate limits are bursty: one short retry has saved whole installs
-                    // that died at 99% on a single 403.
+                    // Mirror rate limits are bursty, and some mirrors commit truncated
+                    // bodies: one delayed retry — deleting the bad artifact first — has
+                    // saved whole installs that died at 99% on a single 403.
+                    if (transfer.Success)
+                    {
+                        TryDelete(file.Destination);
+                    }
+
                     await Task.Delay(FileRetryDelay, token).ConfigureAwait(false);
                     transfer = await DownloadPlannedFileAsync(
                         request, task, stage, stageLabel, doneFiles, totalFiles, token).ConfigureAwait(false);
+                    verified = transfer.Success
+                        && await MinecraftFileVerifier.VerifyAsync(file.Expected, token).ConfigureAwait(false);
                 }
 
-                if (!transfer.Success)
+                if (!verified)
                 {
+                    TryDelete(file.Destination);
                     throw new InvalidOperationException(
-                        $"下载 {Path.GetFileName(file.Destination)} 失败：{(transfer.Errors.Count > 0 ? transfer.Errors[0].Message : "未知错误")}");
+                        $"下载 {Path.GetFileName(file.Destination)} 失败：{(transfer.Errors.Count > 0 ? transfer.Errors[0].Message : (transfer.Success ? "校验未通过" : "未知错误"))}");
                 }
 
                 doneFiles++;
@@ -364,6 +386,19 @@ public sealed class MinecraftInstallService : IDisposable
         task.Complete($"已安装 {instanceId}");
         Installed?.Invoke(root);
         return new MinecraftInstallResult(instanceId, instanceDirectory);
+    }
+
+    private static void TryDelete(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (IOException)
+        {
+            // Cleanup must not kill the install; a leftover bad file fails the next
+            // verification and is re-downloaded then.
+        }
     }
 
     private static readonly TimeSpan FileRetryDelay = TimeSpan.FromSeconds(3);
@@ -430,15 +465,17 @@ public sealed class MinecraftInstallService : IDisposable
 
 
     private async Task<InstallDownload> ResolveAddonDownloadAsync(
-        MinecraftInstallAddon addon, CancellationToken token)
+        string gameVersion, MinecraftInstallAddon addon, CancellationToken token)
     {
         if (_catalog is null)
         {
             throw new InvalidOperationException("没有可用的安装目录源，无法解析附加组件。");
         }
 
+        // Addon catalogs are per-game: without the game version the provider filter is
+        // meaningless and the merged source returns the wrong artifact set.
         IReadOnlyList<InstallCatalogVersion> versions =
-            await _catalog.GetLoadersAsync(addon.Kind, game: "", token).ConfigureAwait(false);
+            await _catalog.GetLoadersAsync(addon.Kind, gameVersion, token).ConfigureAwait(false);
         foreach (InstallCatalogVersion version in versions)
         {
             if (!string.Equals(version.Id, addon.Version, StringComparison.Ordinal))
@@ -506,7 +543,13 @@ public sealed class MinecraftInstallService : IDisposable
         WriteIndented = true,
     };
 
-    private sealed record PlannedFile(string[] Sources, string Destination, string? Sha1, long Size);
+    private sealed record PlannedFile(string[] Sources, string Destination, string? Sha1, long Size)
+    {
+        public MinecraftExpectedFile Expected => new(
+            Destination,
+            Size > 0 ? Size : null,
+            string.IsNullOrWhiteSpace(Sha1) ? null : Sha1);
+    }
 
     /// <summary>Production metadata port: manifest → per-version JSON over the shared client.</summary>
     private sealed class HttpMinecraftInstallMetadataSource(HttpClient http) : IMinecraftInstallMetadataSource

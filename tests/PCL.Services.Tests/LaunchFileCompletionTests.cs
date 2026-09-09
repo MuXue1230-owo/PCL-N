@@ -6,6 +6,11 @@ using PCL.Services.Minecraft.Launch;
 using PCL.Services.Minecraft.Libraries;
 using PCL.Xsr.State;
 
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Cryptographic Do Not Use",
+    "CA5350:DoNotUseWeakCryptographicAlgorithms",
+    Justification = "Fixture integrity facts use SHA-1 to match the Mojang metadata contract.")]
+
 namespace PCL.Services.Tests;
 
 // The legacy 补全文件 contract: before the JVM starts, every referenced file is verified and
@@ -68,21 +73,21 @@ internal static partial class Program
         string versionsRoot = Path.Combine(fixture.Root, "versions");
         string gameDirectory = Path.Combine(versionsRoot, "1.20.1");
         Directory.CreateDirectory(gameDirectory);
-        await File.WriteAllTextAsync(Path.Combine(gameDirectory, "1.20.1.json"), """
+        await File.WriteAllTextAsync(Path.Combine(gameDirectory, "1.20.1.json"), ("""
         {
           "id": "1.20.1",
           "assetIndex": {
             "id": "5",
             "url": "https://piston-meta.mojang.com/v1/packages/index/5.json",
-            "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sha1": "__INDEX_SHA__",
             "size": 90,
             "totalSize": 90
           },
           "downloads": {
             "client": {
               "url": "https://piston-data.mojang.com/v1/objects/client.jar",
-              "sha1": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "size": 10
+              "sha1": "__JAR_SHA__",
+              "size": 8
             }
           },
           "libraries": [
@@ -91,20 +96,23 @@ internal static partial class Program
               "downloads": { "artifact": {
                 "path": "com/example/present/1.0.0/present-1.0.0.jar",
                 "url": "https://libraries.minecraft.net/com/example/present.jar",
-                "sha1": "cccccccccccccccccccccccccccccccccccccccc",
-                "size": 8 } }
+                "sha1": "__PRESENT_SHA__",
+                "size": 13 } }
             },
             {
               "name": "com.example:missing:1.0.0",
               "downloads": { "artifact": {
                 "path": "com/example/missing/1.0.0/missing-1.0.0.jar",
                 "url": "https://libraries.minecraft.net/com/example/missing.jar",
-                "sha1": "dddddddddddddddddddddddddddddddddddddddd",
+                "sha1": "__MISSING_SHA__",
                 "size": 8 } }
             }
           ]
         }
-        """);
+        """.Replace("__INDEX_SHA__", Sha1Hex("index"))
+           .Replace("__JAR_SHA__", Sha1Hex("REPAIRED"))
+           .Replace("__PRESENT_SHA__", Sha1Hex("ALREADY-THERE"))
+           .Replace("__MISSING_SHA__", Sha1Hex("REPAIRED"))));
 
         // Present files stay untouched; the client jar, the missing library, the asset index,
         // and one asset object are gone.
@@ -112,18 +120,22 @@ internal static partial class Program
             fixture.Root, "libraries", "com", "example", "present", "1.0.0", "present-1.0.0.jar");
         Directory.CreateDirectory(Path.GetDirectoryName(presentJar)!);
         await File.WriteAllTextAsync(presentJar, "ALREADY-THERE");
-        string assetHash = new string('e', 40);
+        string assetHash = Sha1Hex("ASSET-OK");
         string assetPath = Path.Combine(fixture.Root, "assets", "objects", assetHash[..2], assetHash);
         Directory.CreateDirectory(Path.GetDirectoryName(assetPath)!);
         await File.WriteAllTextAsync(assetPath, "ASSET-OK");
         Directory.CreateDirectory(Path.Combine(fixture.Root, "assets", "indexes"));
-        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "assets", "indexes", "5.json"), """
+        string corruptAssetPath = Path.Combine(
+            fixture.Root, "assets", "objects", Sha1Hex("REPAIRED")[..2], Sha1Hex("REPAIRED"));
+        Directory.CreateDirectory(Path.GetDirectoryName(corruptAssetPath)!);
+        await File.WriteAllTextAsync(corruptAssetPath, "CORRUPTED-BYTES");
+        await File.WriteAllTextAsync(Path.Combine(fixture.Root, "assets", "indexes", "5.json"), ("""
         { "objects": {
             "minecraft/sounds/gone.ogg": {
-              "hash": "ffffffffffffffffffffffffffffffffffffffff",
-              "size": 5 }
+              "hash": "__GONE_SHA__",
+              "size": 8 }
         } }
-        """);
+        """.Replace("__GONE_SHA__", Sha1Hex("REPAIRED"))));
 
         MinecraftInstanceDescriptor instance = new(
             "1.20.1",
@@ -177,9 +189,10 @@ internal static partial class Program
         AssertTrue(File.Exists(missingJar));
         AssertTrue(File.Exists(Path.Combine(gameDirectory, "1.20.1.jar")));
         string repairedAsset = Path.Combine(
-            fixture.Root, "assets", "objects", "ffffffffffffffffffffffffffffffffffffffff"[..2],
-            "ffffffffffffffffffffffffffffffffffffffff");
+            fixture.Root, "assets", "objects", Sha1Hex("REPAIRED")[..2],
+            Sha1Hex("REPAIRED"));
         AssertTrue(File.Exists(repairedAsset));
+        AssertEqual("REPAIRED", await File.ReadAllTextAsync(repairedAsset));
         // Present files are never re-downloaded.
         AssertEqual("ALREADY-THERE", await File.ReadAllTextAsync(presentJar));
         AssertEqual("ASSET-OK", await File.ReadAllTextAsync(assetPath));

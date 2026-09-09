@@ -6,6 +6,11 @@ using PCL.Services.Tasks;
 using PCL.Xsr;
 using PCL.Xsr.State;
 
+[assembly: System.Diagnostics.CodeAnalysis.SuppressMessage(
+    "Cryptographic Do Not Use",
+    "CA5350:DoNotUseWeakCryptographicAlgorithms",
+    Justification = "Fixture integrity facts use SHA-1 to match the Mojang metadata contract.")]
+
 namespace PCL.Services.Tests;
 
 // XSR-724: the real install pipeline — version documents written before transfer, the shared
@@ -61,16 +66,21 @@ internal static partial class Program
 
     private sealed class FakeCatalog(string addonFileUrl) : IInstallCatalogSource
     {
+        public string? RequestedGame { get; private set; }
+
         public Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token) =>
             Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([]);
 
         public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(
-            InstallLoader loader, string game, CancellationToken token) =>
-            Task.FromResult<IReadOnlyList<InstallCatalogVersion>>(
+            InstallLoader loader, string game, CancellationToken token)
+        {
+            RequestedGame = game;
+            return Task.FromResult<IReadOnlyList<InstallCatalogVersion>>(
             [
                 new InstallCatalogVersion("1.0.0", loader.ToString(), true,
-                    Downloads: [new InstallDownload(loader.ToString(), $"{loader}.jar", new Uri(addonFileUrl), null, 4)]),
+                    Downloads: [new InstallDownload(loader.ToString(), $"{loader}.jar", new Uri(addonFileUrl), null, 7)]),
             ]);
+        }
     }
 
     private sealed class InstallFixture : IDisposable
@@ -100,21 +110,25 @@ internal static partial class Program
         public void Dispose() => Install.Dispose();
     }
 
+    private static string Sha1Hex(string content) =>
+        Convert.ToHexString(System.Security.Cryptography.SHA1.HashData(
+            System.Text.Encoding.UTF8.GetBytes(content)));
+
     private static JsonObject VanillaJson() => JsonNode.Parse("""
         {
           "id": "1.20.1",
           "assetIndex": {
             "id": "5",
             "url": "https://piston-meta.mojang.com/v1/packages/asset-index/5.json",
-            "sha1": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "sha1": "__ASSET_SHA__",
             "size": 100,
             "totalSize": 100
           },
           "downloads": {
             "client": {
               "url": "https://piston-data.mojang.com/v1/objects/client/1.20.1.jar",
-              "sha1": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-              "size": 20
+              "sha1": "__JAR_SHA__",
+              "size": 10
             }
           },
           "libraries": [
@@ -124,25 +138,25 @@ internal static partial class Program
                 "artifact": {
                   "path": "com/example/library/1.0.0/library-1.0.0.jar",
                   "url": "https://libraries.minecraft.net/com/example/library/1.0.0/library-1.0.0.jar",
-                  "sha1": "cccccccccccccccccccccccccccccccccccccccc",
-                  "size": 8
+                  "sha1": "__JAR_SHA__",
+                  "size": 10
                 }
               }
             }
           ]
         }
-        """)!.AsObject();
+        """.Replace("__ASSET_SHA__", Sha1Hex("ASSET!")).Replace("__JAR_SHA__", Sha1Hex("JARCONTENT")))!.AsObject();
 
     private static JsonObject AssetIndexJson() => JsonNode.Parse("""
         {
           "objects": {
             "minecraft/sounds/click.ogg": {
-              "hash": "dddddddddddddddddddddddddddddddddddddddd",
+              "hash": "__ASSET_SHA__",
               "size": 6
             }
           }
         }
-        """)!.AsObject();
+        """.Replace("__ASSET_SHA__", Sha1Hex("ASSET!")))!.AsObject();
 
     private static byte[] PayloadFor(string url) => url.Contains("/client/") || url.Contains("library")
         ? "JARCONTENT"u8.ToArray()
@@ -153,7 +167,8 @@ internal static partial class Program
     private static async ValueTask InstallRunsTheRealPipelineIntoTheVersionLibrary()
     {
         FakeMetadata metadata = new() { VanillaJson = VanillaJson(), AssetIndexJson = AssetIndexJson() };
-        using InstallFixture fixture = new(metadata, new FakeCatalog("https://example.invalid/fabricapi.jar"));
+        FakeCatalog catalog = new("https://example.invalid/fabricapi.jar");
+        using InstallFixture fixture = new(metadata, catalog);
         string root = Path.Combine(Path.GetTempPath(), "nexa-install-tests", Guid.NewGuid().ToString("N"));
         try
         {
@@ -162,7 +177,8 @@ internal static partial class Program
                     root, "1.20.1",
                     Loader: InstallLoader.Fabric, LoaderBuild: "0.16.9",
                     Addons: [new MinecraftInstallAddon(InstallLoader.FabricApi, "1.0.0")]));
-            AssertTrue(result.IsSuccess, $"install failed: {result.Error?.Code} {result.Error?.Message}");
+            string entryError = fixture.Entry().ErrorMessage ?? "none";
+            AssertTrue(result.IsSuccess, $"install failed: {result.Error?.Code}; entry={entryError}");
 
             // Both version documents exist before any transfer; the loader one carries identity.
             string vanilla = await File.ReadAllTextAsync(
@@ -176,13 +192,16 @@ internal static partial class Program
             AssertTrue(File.Exists(Path.Combine(root, "versions", "1.20.1", "1.20.1.jar")), "client jar missing");
             AssertTrue(File.Exists(Path.Combine(
                 root, "libraries", "com", "example", "library", "1.0.0", "library-1.0.0.jar")));
-            string assetHash = new string('d', 40);
+            string assetHash = Sha1Hex("ASSET!");
             AssertTrue(File.Exists(Path.Combine(root, "assets", "objects", assetHash[..2], assetHash)));
             AssertTrue(File.Exists(Path.Combine(root, "assets", "indexes", "5.json")));
             AssertTrue(File.Exists(Path.Combine(root, "mods", "FabricApi.jar")));
 
             AssertEqual(1, fixture.InstalledRoots.Count);
             AssertTrue(MinecraftLibraryService.PathComparer.Equals(fixture.InstalledRoots[0], root));
+
+            // Addon resolution is game-scoped: the catalog filter saw this install's version.
+            AssertEqual("1.20.1", catalog.RequestedGame);
 
             // The run reads as one finished task with a file-accurate count.
             TaskCenterEntry entry = fixture.Entry();

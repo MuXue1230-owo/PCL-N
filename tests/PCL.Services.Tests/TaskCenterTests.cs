@@ -67,10 +67,13 @@ internal static partial class Program
             "install:2", "安装 Minecraft 1.20.1", ["游戏文件"]));
         AssertFalse(task.CancellationToken.IsCancellationRequested);
 
-        AssertTrue(service.RequestCancel("install:2"), "cancel accepted");
+        AssertEqual(TaskCenterCancelResult.Canceled, service.RequestCancel("install:2"));
         AssertTrue(task.CancellationToken.IsCancellationRequested, "owner token fired");
 
+        // Terminal and unknown ids read as not-found at the boundary.
         task.Canceled();
+        AssertEqual(TaskCenterCancelResult.NotFound, service.RequestCancel("install:2"));
+        AssertEqual(TaskCenterCancelResult.NotFound, service.RequestCancel("missing"));
         TaskCenterEntry entry = store.ReadCollection<TaskCenterEntry>(
             store.Resolve(TaskCenterStateContract.EntriesKey)).Items.Single();
         AssertEqual(TaskCenterEntryState.Canceled, entry.State);
@@ -109,6 +112,56 @@ internal static partial class Program
         TaskCenterEntry reentered = store.ReadCollection<TaskCenterEntry>(entries).Items.Single();
         AssertEqual(TaskCenterEntryState.Running, reentered.State);
         AssertEqual(null, reentered.ErrorMessage);
+        return ValueTask.CompletedTask;
+    }
+
+    private static ValueTask TaskCenterRejectsCancelOfProtectedTasks()
+    {
+        TaskCenterService service = NewTaskCenter(out XsrStateStore store);
+        using ITaskCenterTask protectedTask = service.Begin(new TaskCenterStart(
+            "update:1", "启动器自更新", [], CanCancel: false));
+
+        AssertEqual(TaskCenterCancelResult.NotCancelable, service.RequestCancel("update:1"));
+        AssertFalse(protectedTask.CancellationToken.IsCancellationRequested);
+        return ValueTask.CompletedTask;
+    }
+
+    private static ValueTask TaskCenterBoundsTerminalHistoryForEveryTerminalKind()
+    {
+        TaskCenterService service = NewTaskCenter(out XsrStateStore store);
+        XsrStateId entries = store.Resolve(TaskCenterStateContract.EntriesKey);
+        int TerminalCount() => store.ReadCollection<TaskCenterEntry>(entries)
+            .Items.Count(static entry => entry.IsTerminal);
+
+        for (int index = 0; index < 31; index++)
+        {
+            service.Begin(new TaskCenterStart($"done:{index}", $"完成 {index}", [])).Complete();
+        }
+
+        AssertTrue(TerminalCount() <= 30, $"finished bounded: {TerminalCount()}");
+
+        for (int index = 0; index < 31; index++)
+        {
+            service.Begin(new TaskCenterStart($"fail:{index}", $"失败 {index}", [])).Fail("boom");
+        }
+
+        AssertTrue(TerminalCount() <= 30, $"failed bounded: {TerminalCount()}");
+
+        for (int index = 0; index < 31; index++)
+        {
+            ITaskCenterTask canceled = service.Begin(new TaskCenterStart($"cancel:{index}", $"取消 {index}", []));
+            _ = service.RequestCancel($"cancel:{index}");
+            canceled.Canceled();
+        }
+
+        AssertTrue(TerminalCount() <= 30, $"canceled bounded: {TerminalCount()}");
+
+        for (int index = 0; index < 31; index++)
+        {
+            service.Begin(new TaskCenterStart($"abandon:{index}", $"丢弃 {index}", [])).Dispose();
+        }
+
+        AssertTrue(TerminalCount() <= 30, $"abandoned bounded: {TerminalCount()}");
         return ValueTask.CompletedTask;
     }
 

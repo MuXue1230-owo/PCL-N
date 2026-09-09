@@ -51,6 +51,14 @@ public sealed record TaskCenterSummary(
 
 public sealed record TaskCenterStart(string TaskId, string Title, IReadOnlyList<string> StagePlan, bool CanCancel = true);
 
+/// <summary>Outcome of a cancel request, so the route layer can tell the states apart.</summary>
+public enum TaskCenterCancelResult
+{
+    Canceled = 0,
+    NotFound = 1,
+    NotCancelable = 2,
+}
+
 public static class TaskCenterRoutes
 {
     public static readonly XsrSemanticId Cancel = XsrSemanticId.Parse("tasks.center.cancel");

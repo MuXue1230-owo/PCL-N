@@ -10,6 +10,8 @@ internal static partial class Program
         ("install cancel marks the task canceled", InstallCancelMarksTheTaskCanceled),
         ("task center tracks lifecycle and summary", TaskCenterTracksLifecycleAndSummary),
         ("task center cancel routes to owner token", TaskCenterCancelRoutesToOwnerToken),
+        ("task center rejects cancel of protected tasks", TaskCenterRejectsCancelOfProtectedTasks),
+        ("task center bounds terminal history for every terminal kind", TaskCenterBoundsTerminalHistoryForEveryTerminalKind),
         ("task center stages never move backwards", TaskCenterStagesNeverMoveBackwards),
         ("task center abandoned handles surface as failed", TaskCenterAbandonedHandlesSurfaceAsFailed),
         ("task center clear finished leaves active", TaskCenterClearFinishedLeavesActive),

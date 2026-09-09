@@ -37,6 +37,19 @@ XSR-604 deliberately deferred processor execution. The Fabric family (Fabric, Le
 Quilt) is fully supported because their profile JSON is declarative. The Java-runtime and
 Bedrock install flows remain on their own tracks (JavaRuntimeInstaller / XSR-721).
 
+## Integrity and scoping corrections (2026-09-09, review round)
+
+- **One shared verifier.** `MinecraftFileVerifier` is the single integrity rule for install,
+  launch completion, and future repair passes: a known SHA-1 must match, else a known size
+  must match, else the file needs only existence-with-content. Every consumer uses it both
+  for reuse decisions (existence-with-content alone used to certify truncated artifacts as
+  complete installs) and after each transfer — a failed verification deletes the artifact and
+  retries once before failing the run. Assets are hash-verified too: launch completion plans
+  every object and lets the verifier decide reuse (the `CheckHash = false` shortcut is gone).
+- **Addon resolution is game-scoped.** `ResolveAddonDownloadAsync` passes the install's game
+  version into `GetLoadersAsync`; provider-side game-version filters are meaningless without
+  it.
+
 ## Launch-side twin
 
 `MinecraftLaunchFileCompletion` runs the same planner set from the launch pipeline's
