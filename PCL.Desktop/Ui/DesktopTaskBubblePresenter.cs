@@ -18,14 +18,14 @@ internal static class TaskBubbleState
 
 /// <summary>
 /// Render-thread projection of the task center summary into the bottom-right progress
-/// bubble. The bubble is a persistent shell-level overlay: a round button whose translucent
-/// fill rises from the bottom with aggregated task progress (parity with the legacy extra
-/// dock's task bubble, hidden while the task page is open). All tree mutations happen at
+/// bubble. The compact shell overlay shows task count and a fine progress track, and yields
+/// while the task page is open. All tree mutations happen at
 /// <see cref="XsrUiRenderer.FramePreparing"/>; worker threads only publish the wake cell.
 /// </summary>
 internal sealed class DesktopTaskBubblePresenter : IDisposable
 {
-    private const double BubbleSize = 44;
+    private const double BubbleSize = 54;
+    private const double BubbleWidth = 160;
     private const double DockInset = 18;
     private static readonly TimeSpan ExitSettle = TimeSpan.FromMilliseconds(360);
     private static readonly XsrSemanticId OpenCommand = XsrSemanticId.Parse("ui.tasks.open");
@@ -36,6 +36,7 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
     private readonly XsrStateId _wakeState;
     private readonly XsrUiEntityId _root;
     private readonly XsrUiEntityId _fill;
+    private readonly XsrUiEntityId _label;
     private readonly XsrUiOverlayMotion _motion;
     private readonly TimeProvider _timeProvider;
     private long _wakeRevision;
@@ -56,11 +57,11 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
         _wakeState = store.Resolve(TaskBubbleState.Revision);
 
         // Children of a plain element overlap the full content rect in attach order, so the
-        // fill sits below the centered icon inside the same round button.
+        // track sits below the caption beside the icon.
         _root = shell.Tree.Create("task-bubble");
         shell.Tree.SetComponent(_root, new XsrUiElement
         {
-            Width = BubbleSize,
+            Width = BubbleWidth,
             Height = BubbleSize,
             Margin = new XsrUiThickness(0, 0, DockInset, DockInset),
             HorizontalAlignment = XsrUiAlignment.End,
@@ -73,25 +74,29 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
         _motion = new XsrUiOverlayMotion(XsrUiOverlayMotionKind.Notification);
         shell.Tree.SetComponent(_root, _motion);
         shell.Tree.SetComponent(_root, Style(
-            background: new XsrUiColor(30, 36, 46, 235),
-            foreground: new XsrUiColor(255, 255, 255),
-            border: new XsrUiColor(255, 255, 255, 36),
+            background: new XsrUiColor(248, 250, 254, 250),
+            foreground: new XsrUiColor(24, 58, 102),
+            border: new XsrUiColor(219, 227, 239),
             cornerRadius: BubbleSize / 2,
             borderWidth: 1,
-            hover: new XsrUiColor(255, 255, 255, 26)));
+            hover: new XsrUiColor(227, 237, 252)));
 
+        XsrUiEntityId track = shell.Tree.Create("task-bubble-track");
+        shell.Tree.Attach(track, _root);
+        shell.Tree.SetComponent(track, new XsrUiElement { Width = 90, Height = 3, Margin = new XsrUiThickness(52, 36, 0, 0), HorizontalAlignment = XsrUiAlignment.Start, VerticalAlignment = XsrUiAlignment.Start });
+        shell.Tree.SetComponent(track, Style(new(220, 230, 244), XsrUiColor.Transparent, XsrUiColor.Transparent, 1.5));
         _fill = shell.Tree.Create("task-bubble-fill");
-        shell.Tree.Attach(_fill, _root);
-        shell.Tree.SetComponent(_fill, new XsrUiElement { Width = BubbleSize, Height = BubbleSize });
+        shell.Tree.Attach(_fill, track);
+        shell.Tree.SetComponent(_fill, new XsrUiElement());
         shell.Tree.SetComponent(_fill, new XsrUiProgress
         {
-            Anchor = XsrUiProgressFillAnchor.Bottom,
+            Anchor = XsrUiProgressFillAnchor.Leading,
         });
         shell.Tree.SetComponent(_fill, Style(
-            background: new XsrUiColor(255, 255, 255, 64),
+            background: new XsrUiColor(32, 110, 224),
             foreground: XsrUiColor.Transparent,
             border: XsrUiColor.Transparent,
-            cornerRadius: BubbleSize / 2));
+            cornerRadius: 1.5));
 
         XsrUiEntityId icon = shell.Tree.Create("task-bubble-icon");
         shell.Tree.Attach(icon, _root);
@@ -99,11 +104,18 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
         {
             Width = 20,
             Height = 20,
-            HorizontalAlignment = XsrUiAlignment.Center,
+            HorizontalAlignment = XsrUiAlignment.Start,
             VerticalAlignment = XsrUiAlignment.Center,
+            Margin = new XsrUiThickness(18, 0, 0, 0),
         });
         shell.Tree.SetComponent(icon, new XsrUiImage("lucide/list-checks"));
 
+        shell.Tree.SetComponent(icon, Style(XsrUiColor.Transparent, new(32, 110, 224), XsrUiColor.Transparent, 0));
+        _label = shell.Tree.Create("task-bubble-label");
+        shell.Tree.Attach(_label, _root);
+        shell.Tree.SetComponent(_label, new XsrUiElement { Width = 96, Height = 20, Margin = new XsrUiThickness(52, 11, 0, 0), HorizontalAlignment = XsrUiAlignment.Start, VerticalAlignment = XsrUiAlignment.Start });
+        shell.Tree.SetComponent(_label, new XsrUiText("任务"));
+        shell.Tree.SetComponent(_label, new XsrUiVisualStyle { Foreground = new(38, 51, 72), FontSize = 13, FontWeight = 600 });
         shell.Stage.Show(_root);
         _shell.Renderer.FramePreparing += OnFramePreparing;
     }
@@ -166,6 +178,16 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
     private void Reconcile(TaskCenterSummary summary)
     {
         bool wanted = summary.VisibleCount > 0 && !_pageVisible;
+        if (wanted && _closing)
+        {
+            _exitTimer?.Dispose(); _exitTimer = null;
+            _exitPending = false; _closing = false; _motion.IsClosing = false;
+            SetEnabled(true);
+            _shell.Tree.MarkDirty(_root, XsrUiDirtyKinds.Paint);
+        }
+        string caption = summary.ActiveCount > 0 ? $"{summary.ActiveCount} 项 · {(int)Math.Round(summary.Progress * 100)}%" : $"{summary.VisibleCount} 项任务";
+        var label = _shell.Tree.GetComponent<XsrUiText>(_label)!;
+        if (label.Content != caption) { label.Content = caption; _shell.Tree.MarkDirty(_label, XsrUiDirtyKinds.Layout | XsrUiDirtyKinds.Paint); }
         if (wanted && !_closing && !IsVisible(_root))
         {
             SetVisible(true);
@@ -196,7 +218,7 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
             _lastAnnouncedPercent = percent;
             semantic.Label = summary.ActiveCount > 0
                 ? $"任务进行中 {percent}%，打开任务中心"
-                : "任务已完成，打开任务中心";
+                : "查看任务记录，打开任务中心";
         }
     }
 

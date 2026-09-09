@@ -57,3 +57,9 @@ must leave the scene clean. Task ownership and cancel/dismiss routes remain Serv
   outright and returns a distinguishable `NotCancelable` result; the route layer maps it to
   `tasks.task_not_cancelable` so an enforced boundary is never disguised as an unknown id.
   Hiding the button is presentation, not protection.
+
+### Zero-progress presentation
+
+A progress node remains in the scene while its viewport intersects the parent clip, even when
+its initial fill has zero width. This lets the backend start the progress animation. Clipping
+continues to use the viewport; offscreen progress nodes remain culled.

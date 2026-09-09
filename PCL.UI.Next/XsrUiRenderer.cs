@@ -1297,7 +1297,12 @@ public sealed partial class XsrUiRenderer
             if (_hovered == entity) _hovered = default;
             if (_focused == entity) _focused = default;
         }
-        XsrUiRect? visibleClip = clip is { } parentClip ? Intersect(rect, parentClip) : null;
+        // A zero-width initial fill still needs to reach the backend to start its animation.
+        XsrUiRect clipBounds = _tree.GetComponent<XsrUiProgress>(entity) is not null
+            && _arrangedSlots.TryGetValue(entity.Index, out XsrUiRect progressSlot)
+                ? progressSlot with { X = progressSlot.X + offsetX, Y = progressSlot.Y + offsetY }
+                : rect;
+        XsrUiRect? visibleClip = clip is { } parentClip ? Intersect(clipBounds, parentClip) : null;
         if (_tree.GetComponent<XsrUiSegmentReveal>(entity) is not null) visibleClip = Intersect(rect, visibleClip ?? rect);
         if (visibleClip is { Width: <= 0 } or { Height: <= 0 }) return;
         int entryOrder = -1;

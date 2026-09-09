@@ -22,13 +22,15 @@ internal sealed class TaskCenterController : IDisposable
     private const string PageResource = "Ui.TaskCenterPage.pxml";
     private const string CardResource = "Ui.TaskCard.pxml";
 
+    private static readonly XsrSemanticId DetailsCommand = XsrSemanticId.Parse("ui.tasks.card.details");
+    private readonly ConcurrentQueue<string> _detailToggles = new();
     private static readonly XsrSemanticId OpenCommand = XsrSemanticId.Parse("ui.tasks.open");
     private static readonly XsrSemanticId CardCancelCommand = XsrSemanticId.Parse("ui.tasks.card.cancel");
     private static readonly XsrSemanticId CardDismissCommand = XsrSemanticId.Parse("ui.tasks.card.dismiss");
     private static readonly XsrSemanticId ClearFinishedCommand = XsrSemanticId.Parse("ui.tasks.clear-finished");
 
-    private static readonly XsrUiColor CardBackground = new(250, 252, 254, 253);
-    private static readonly XsrUiColor CardBorder = new(214, 226, 236);
+    private static readonly XsrUiColor CardBackground = new(255, 255, 255);
+    private static readonly XsrUiColor CardBorder = new(228, 233, 240);
     private static readonly XsrUiColor TitleInk = new(40, 48, 60);
     private static readonly XsrUiColor SecondaryInk = new(112, 124, 138);
     private static readonly XsrUiColor RunningAccent = new(19, 112, 243);
@@ -67,6 +69,8 @@ internal sealed class TaskCenterController : IDisposable
         XsrUiEntityId steps,
         List<XsrUiEntityId> stepRows)
     {
+        public bool Expanded { get; set; }
+        public XsrUiEntityId Details { get; init; }
         public TaskCenterEntry? Value { get; set; }
         public XsrUiEntityId Root { get; } = root;
         public XsrUiEntityId Icon { get; } = icon;
@@ -130,6 +134,14 @@ internal sealed class TaskCenterController : IDisposable
 
             return true;
         });
+        Style(entities["TaskCenterTitle"], XsrUiColor.Transparent, TitleInk, XsrUiColor.Transparent, 0, fontSize: 28, fontWeight: 650);
+        Style(entities["TaskCenterSummary"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 0, fontSize: 14);
+        Style(entities["TaskCenterClear"], new(239, 244, 251), new(48, 87, 145), XsrUiColor.Transparent, 18, hover: HoverTint, fontSize: 13, fontWeight: 550);
+        _shell.Tree.GetComponent<XsrUiVisualStyle>(entities["TaskCenterClear"])!.TextAlignment = XsrUiTextAlignment.Center;
+        Style(entities["TaskCenterEmptyTitle"], XsrUiColor.Transparent, TitleInk, XsrUiColor.Transparent, 0, fontSize: 18, fontWeight: 600);
+        Style(entities["TaskCenterEmptyHint"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 0, fontSize: 13);
+        Style(entities["TaskCenterEmptyIcon"], XsrUiColor.Transparent, new(144, 159, 181), XsrUiColor.Transparent, 0);
+        _shell.Tree.SetComponent(entities["TaskCenterList"], new XsrUiScrollGesture());
         return (page, entities);
     }
 
@@ -152,7 +164,7 @@ internal sealed class TaskCenterController : IDisposable
             return;
         }
 
-        if (e.Intent.Command != CardCancelCommand && e.Intent.Command != CardDismissCommand)
+        if (e.Intent.Command != CardCancelCommand && e.Intent.Command != CardDismissCommand && e.Intent.Command != DetailsCommand)
         {
             return;
         }
@@ -163,6 +175,8 @@ internal sealed class TaskCenterController : IDisposable
         {
             if (TryFindCardByRoot(ancestor, out PresentedCard? card) && card is not null)
             {
+                if (e.Intent.Command == DetailsCommand)
+                { _detailToggles.Enqueue(card.Value!.TaskId); return; }
                 if (e.Intent.Command == CardCancelCommand)
                 {
                     Dispatch(TaskCenterRoutes.Cancel, new TaskCenterCancelCommand(card.Value!.TaskId));
@@ -228,6 +242,9 @@ internal sealed class TaskCenterController : IDisposable
             return;
         }
 
+        while (_detailToggles.TryDequeue(out string? taskId))
+            if (_cards.TryGetValue(taskId, out var card) && card.Value is { } entry)
+            { card.Expanded = !card.Expanded; ReconcileSteps(card, entry); }
         DrainDispatches();
         TrackStagedState();
         TaskCenterSummary summary =
@@ -311,7 +328,7 @@ internal sealed class TaskCenterController : IDisposable
         {
             header = entries.Items.Any(static entry => entry.State == TaskCenterEntryState.Failed)
                 ? "有任务未成功"
-                : "全部完成";
+                : "没有进行中的任务";
         }
         else
         {
@@ -380,13 +397,16 @@ internal sealed class TaskCenterController : IDisposable
         // The template root was renamed to the per-entry key, so style the root directly.
         Style(root, CardBackground, TitleInk, CardBorder, XsrUiCornerRadii.Surface, borderWidth: 1);
         Style(entities["TaskCardIcon"], XsrUiColor.Transparent, RunningAccent, XsrUiColor.Transparent, 0);
-        Style(entities["TaskCardTitle"], XsrUiColor.Transparent, TitleInk, XsrUiColor.Transparent, 0, fontSize: 14, fontWeight: 600);
+        Style(entities["TaskCardTitle"], XsrUiColor.Transparent, TitleInk, XsrUiColor.Transparent, 0, fontSize: 17, fontWeight: 600);
         Style(entities["TaskCardStage"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 0, fontSize: 13);
         Style(entities["TaskCardPercent"], XsrUiColor.Transparent, TitleInk, XsrUiColor.Transparent, 0, fontSize: 13, fontWeight: 600);
-        Style(entities["TaskCardFill"], RunningAccent, XsrUiColor.Transparent, XsrUiColor.Transparent, XsrUiCornerRadii.Pill(6));
+        Style(entities["TaskCardFill"], RunningAccent, XsrUiColor.Transparent, XsrUiColor.Transparent, 2);
         Style(entities["TaskCardFiles"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 0, fontSize: 12);
         Style(entities["TaskCardSpeed"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 0, fontSize: 12);
         Style(entities["TaskCardError"], XsrUiColor.Transparent, FailedAccent, XsrUiColor.Transparent, 0, fontSize: 12);
+        Style(entities["TaskCardDetails"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, 6, hover: HoverTint, fontSize: 12);
+        Style(entities["TaskCardTrack"], new(236, 240, 246), XsrUiColor.Transparent, XsrUiColor.Transparent, 2);
+        _shell.Tree.GetComponent<XsrUiVisualStyle>(entities["TaskCardError"])!.WrapText = true;
         Style(entities["TaskCardAction"], XsrUiColor.Transparent, SecondaryInk, XsrUiColor.Transparent, XsrUiCornerRadii.Pill(30), hover: HoverTint);
 
         return new PresentedCard(
@@ -401,7 +421,8 @@ internal sealed class TaskCenterController : IDisposable
             entities["TaskCardError"],
             entities["TaskCardAction"],
             entities["TaskCardSteps"],
-            []);
+            [])
+        { Details = entities["TaskCardDetails"] };
     }
 
     private void UpdateCard(PresentedCard card, TaskCenterEntry entry)
@@ -434,7 +455,7 @@ internal sealed class TaskCenterController : IDisposable
         }
 
         Style(card.Icon, XsrUiColor.Transparent, accent, XsrUiColor.Transparent, 0, MarkDirty: false);
-        Style(card.Fill, accent, XsrUiColor.Transparent, XsrUiColor.Transparent, XsrUiCornerRadii.Pill(6), MarkDirty: false);
+        Style(card.Fill, accent, XsrUiColor.Transparent, XsrUiColor.Transparent, 2, MarkDirty: false);
         Style(card.Percent, XsrUiColor.Transparent, accent, XsrUiColor.Transparent, 0, fontSize: 13, fontWeight: 600, MarkDirty: false);
         // Same guard as the bubble: FramePreparing fires every frame, so only a moved target
         // may dirty the tree — an unconditional mark spins the render loop.
@@ -448,7 +469,9 @@ internal sealed class TaskCenterController : IDisposable
         }
         SetText(card.Title, entry.Title);
         SetText(card.Stage, entry.IsTerminal ? entry.Detail : $"{entry.Stage} · {entry.Detail}");
-        SetText(card.Percent, $"{(int)Math.Round(Math.Clamp(entry.Progress, 0d, 1d) * 100d)}%");
+        SetText(card.Percent, entry.State switch { TaskCenterEntryState.Finished => "已完成", TaskCenterEntryState.Failed => "失败", TaskCenterEntryState.Canceled => "已取消", _ => $"{(int)Math.Round(Math.Clamp(entry.Progress, 0d, 1d) * 100d)}%" });
+        SetVisible(_shell.Tree.Parent(card.Fill), !entry.IsTerminal);
+        SetVisible(_shell.Tree.Parent(card.Files), entry.TotalFiles > 0 || entry.SpeedBytesPerSecond > 0 && !entry.IsTerminal);
         SetText(card.Files, entry.TotalFiles > 0
             ? string.Create(CultureInfo.CurrentCulture, $"{entry.CompletedFiles}/{entry.TotalFiles} 个文件")
             : string.Empty);
@@ -478,8 +501,11 @@ internal sealed class TaskCenterController : IDisposable
     private void ReconcileSteps(PresentedCard card, TaskCenterEntry entry)
     {
         IReadOnlyList<TaskCenterStep> steps = entry.Steps ?? [];
-        bool wantsSteps = steps.Count > 1;
-        if (card.HasSteps != wantsSteps || card.StepRows.Count != steps.Count)
+        bool wantsSteps = steps.Count > 1 && card.Expanded;
+        SetVisible(card.Details, steps.Count > 1);
+        SetText(card.Details, card.Expanded ? "收起步骤" : "查看步骤");
+        _shell.Tree.GetComponent<XsrUiSemantic>(card.Details)!.Label = card.Expanded ? "收起任务步骤" : "展开任务步骤";
+        if (card.HasSteps != wantsSteps || wantsSteps && card.StepRows.Count != steps.Count)
         {
             foreach (XsrUiEntityId row in card.StepRows)
             {
@@ -495,7 +521,7 @@ internal sealed class TaskCenterController : IDisposable
             {
                 XsrUiEntityId row = _shell.Tree.Create($"task-card-step:{entry.TaskId}:{i}");
                 _shell.Tree.Attach(row, card.Steps);
-                _shell.Tree.SetComponent(row, new XsrUiElement { Height = 16 });
+                _shell.Tree.SetComponent(row, new XsrUiElement { Height = 22 });
                 _shell.Tree.SetComponent(row, new XsrUiText(string.Empty));
                 card.StepRows.Add(row);
             }

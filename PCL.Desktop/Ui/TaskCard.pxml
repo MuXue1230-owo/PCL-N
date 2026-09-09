@@ -1,30 +1,30 @@
-<StackPanel xmlns="https://pcln.dev/pxml/2026" Key="TaskCard" Orientation="Vertical" Spacing="6"
-            Padding="16,14,16,14">
+<StackPanel xmlns="https://pcln.dev/pxml/2026" Key="TaskCard" Orientation="Vertical" >
+  <StackPanel Key="TaskCardContent" Orientation="Vertical" Spacing="10" Padding="22,18,22,18">
   <!--
     One task card, instantiated per task center entry. State copy, icons, progress, and step
     rows are filled at frame time by the task center controller; cancel and dismiss carry the
     entry identity through the source entity, resolved by walking to the card root.
   -->
   <StackPanel Key="TaskCardHeader" Orientation="Horizontal">
-    <Image Key="TaskCardIcon" Source="lucide/loader-circle" Width="18" Height="18"
-           Margin="0,3,8,0" />
-    <Text Key="TaskCardTitle" Content="任务" Height="22" Weight="1" />
+    <Image Key="TaskCardIcon" Source="lucide/loader-circle" Width="22" Height="22"
+           Margin="0,3,12,0" />
+    <Text Key="TaskCardTitle" Content="任务" Height="26" Weight="1" />
     <Button Key="TaskCardAction" Icon="lucide/x" Label="取消任务"
             Command="ui.tasks.card.cancel" Width="30" Height="30" />
   </StackPanel>
   <StackPanel Key="TaskCardStatus" Orientation="Horizontal">
-    <Text Key="TaskCardStage" Content="正在准备" Height="16" Weight="1" />
-    <Text Key="TaskCardPercent" Content="0%" Height="16" Margin="12,0,0,0" />
+    <Text Key="TaskCardStage" Content="正在准备" Height="20" Weight="1" />
+    <Text Key="TaskCardPercent" Content="0%" Width="64" Height="20" Margin="12,0,0,0" />
   </StackPanel>
-  <ContentHost Key="TaskCardTrack" Height="6">
-    <Progress Key="TaskCardFill" Height="6" Label="任务进度条" />
+  <ContentHost Key="TaskCardTrack" Height="4">
+    <Progress Key="TaskCardFill" Height="4" Label="任务进度条" />
   </ContentHost>
   <StackPanel Key="TaskCardMeta" Orientation="Horizontal">
-    <Text Key="TaskCardFiles" Content="" Height="16" Weight="1" />
-    <Text Key="TaskCardSpeed" Content="" Height="16" />
+    <Text Key="TaskCardFiles" Content="" Height="20" Weight="1" />
+    <Text Key="TaskCardSpeed" Content="" Height="20" />
   </StackPanel>
-  <Text Key="TaskCardError" Content="" Height="16" IsVisible="false" />
-  <ContentHost Key="TaskCardStepsHost">
-    <StackPanel Key="TaskCardSteps" Orientation="Vertical" Spacing="2" IsVisible="false" />
-  </ContentHost>
+  <Text Key="TaskCardError" Content="" MinHeight="20" IsVisible="false" />
+  <Button Key="TaskCardDetails" Content="查看步骤" Label="展开任务步骤" Command="ui.tasks.card.details" Width="92" Height="28" HorizontalAlignment="Start" />
+  <StackPanel Key="TaskCardSteps" Orientation="Vertical" Spacing="2" IsVisible="false" />
+</StackPanel>
 </StackPanel>

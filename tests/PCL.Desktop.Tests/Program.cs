@@ -93,7 +93,7 @@ internal static partial class Program
         ("install failure leaves the idle tree clean", InstallFailureLeavesTheIdleTreeClean),
         ("staged task page renders clean between changes", StagedTaskPageRendersCleanBetweenChanges),
         ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
-        ("task bubble fills up from the bottom edge with aggregated progress", TaskBubbleFillsUpFromTheBottomEdge),
+        ("task bubble shows a compact track with aggregated progress", TaskBubbleUsesCompactProgressTrack),
         ("task center page reconciles cards and routes cancel dismiss and clear", TaskCenterPageReconcilesCardsAndRoutesActions),
         ("task center page yields the bubble and reclaims it on back", TaskCenterPageYieldsBubbleAndReclaimsOnBack),
         ("operational feedback uses the shared lower-left notification surface", OperationalFeedbackUsesLowerLeftNotification),
@@ -645,8 +645,8 @@ internal static partial class Program
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         XsrUiSceneNode root = FindByKey(fixture.Shell, scene, "task-bubble");
         // The bubble hugs the bottom-right dock inset.
-        AssertTrue(root.Rect.X >= 1280 - 18 - 44 && root.Rect.X <= 1280 - 18);
-        AssertTrue(root.Rect.Y >= 800 - 18 - 44 && root.Rect.Y <= 800 - 18);
+        AssertTrue(root.Rect.X >= 1280 - 18 - 160 && root.Rect.X <= 1280 - 18);
+        AssertTrue(root.Rect.Y >= 800 - 18 - 54 && root.Rect.Y <= 800 - 18);
         AssertTrue(root.Label!.Contains("40%", StringComparison.Ordinal));
 
         // The page owns the corner while it is open.
@@ -664,7 +664,7 @@ internal static partial class Program
         AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new XsrUiSize(1280, 800)), "task-bubble"));
     }
 
-    private static void TaskBubbleFillsUpFromTheBottomEdge()
+    private static void TaskBubbleUsesCompactProgressTrack()
     {
         using LaunchPageFixture fixture = new(new ImmediateInstanceSource([]));
         fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
@@ -677,8 +677,13 @@ internal static partial class Program
         fixture.Shell.Render(new XsrUiSize(1280, 800));
 
         XsrUiProgress fill = fixture.Shell.Tree.GetComponent<XsrUiProgress>(bubble.FillEntity)!;
-        AssertEqual(XsrUiProgressFillAnchor.Bottom, fill.Anchor);
+        AssertEqual(XsrUiProgressFillAnchor.Leading, fill.Anchor);
         AssertTrue(Math.Abs(fill.Target - 0.5) < 0.0001);
+        AssertTrue(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(node => node.Entity == bubble.FillEntity));
+        fixture.Shell.Renderer.SetProgressPresentation(bubble.FillEntity, 0.5);
+        var presented = fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Single(node => node.Entity == bubble.FillEntity);
+        AssertEqual(45d, presented.Rect.Width);
+        AssertEqual(3d, presented.Rect.Height);
 
         // The presented fill is the renderer-owned catch-up value; with the animation clock
         // parked it must still be clamped between zero and the target.
@@ -706,6 +711,8 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.tasks.open");
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(controller.IsStaged);
+        // A clipped zero-width fill must reach the backend so its animation can start.
+        AssertTrue(HasKey(fixture.Shell, scene, "TaskCardFill"));
         AssertTrue(HasKey(fixture.Shell, scene, "task-card:install:1"));
         AssertTrue(HasKey(fixture.Shell, scene, "task-card:download:1"));
         AssertTrue(scene.Nodes.Any(node => node.Text is not null && node.Text.Contains(
@@ -716,6 +723,13 @@ internal static partial class Program
         AssertTrue(FindByKey(fixture.Shell, scene, "TaskCenterSummary").Text!.Contains(
             "1 个任务进行中", StringComparison.Ordinal));
 
+        AssertFalse(scene.Nodes.Any(node => fixture.Shell.Tree.Name(node.Entity).StartsWith("task-card-step:", StringComparison.Ordinal)));
+        var disclosure = scene.Nodes.First(node => fixture.Shell.Tree.Name(node.Entity) == "TaskCardDetails");
+        AssertTrue(fixture.Shell.Renderer.Activate(disclosure.Entity));
+        scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
+        AssertTrue(scene.Nodes.Any(node => fixture.Shell.Tree.Name(node.Entity).StartsWith("task-card-step:", StringComparison.Ordinal)));
+        AssertTrue(fixture.Shell.Renderer.Activate(disclosure.Entity));
+        fixture.Shell.Render(new XsrUiSize(1280, 800));
         // Cancel routes through the typed command to the owning token.
         XsrUiEntityId installAction = controller.CardAction("install:1");
         Emit(fixture.Intents, "ui.tasks.card.cancel", installAction);
