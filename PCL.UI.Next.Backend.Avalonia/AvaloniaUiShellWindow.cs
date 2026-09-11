@@ -26,7 +26,7 @@ public sealed class AvaloniaUiShellWindow : Window
     // Windows per-pixel transparency is not guaranteed on every machine, and a shadow that
     // renders over an opaque margin exposes the rectangular window bounds instead of reading
     // as depth. A real shadow should come from the platform (DWM corner/shadow integration).
-    private const double ChromeMargin = 14;
+    private const double ChromeMargin = 0;
     private const double ChromeCornerRadius = XsrUiCornerRadii.Surface;
     private const double CloseIconSize = 112;
 

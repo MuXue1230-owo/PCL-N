@@ -74,6 +74,7 @@ internal sealed class VersionSelectionController : IDisposable
         shell.Tree.GetComponent<XsrUiInput>(_entities["LibraryDropdownDismiss"])!.Focusable = false;
         shell.Tree.GetComponent<XsrUiScroll>(_entities["LibraryVersionRows"])!.ShowsVerticalIndicator = true;
         shell.Tree.GetComponent<XsrUiScroll>(_entities["LibraryDirectoryRows"])!.ShowsVerticalIndicator = true;
+        shell.Tree.SetComponent(_entities["LibraryVersionRows"], new XsrUiStableContent());
         Publish("list.visible", true);
         shell.Renderer.FramePreparing += OnFrame;
         intents.IntentEmitted += OnIntent;

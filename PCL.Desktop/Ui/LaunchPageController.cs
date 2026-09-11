@@ -291,6 +291,9 @@ internal sealed partial class LaunchPageController : IDisposable
         Publish(LaunchPageState.SelectedInstanceKey, string.Empty);
         Publish(LaunchPageState.ActionLabelKey, DownloadLabel);
         RefreshAccountPresentation();
+        if (_store.TryResolve(XsrSemanticId.Parse("UiLaunchWidgetPage"), out XsrStateId widgetPage)
+            && _store.ReadAppliedValue(widgetPage) is int savedPage)
+            _shell.Renderer.RebasePagerPage(_pageEntities["LaunchWidgetPager"], Math.Clamp(savedPage, 0, 2));
         RefreshWidgetPresentation();
         Publish(LaunchPageState.WidgetHintKey, LaunchWidgetHints.BuiltIn[_hintIndex]);
         _hintTimer = _timeProvider.CreateTimer(_ => AdvanceHint(), null, TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(3));
@@ -321,6 +324,9 @@ internal sealed partial class LaunchPageController : IDisposable
             return;
         }
 
+        if (_foundationCommands.TryResolve(FoundationRouteIds.SettingsSet, out XsrCommandId saveWidget))
+            _foundationCommands.Dispatch(saveWidget, new SettingsSetCommand("UiLaunchWidgetPage",
+                _shell.Tree.GetComponent<XsrUiPager>(_pageEntities["LaunchWidgetPager"])!.PageIndex.ToString(CultureInfo.InvariantCulture))).Completion.GetAwaiter().GetResult();
         lock (_hintGate) { _disposed = true; _hintTimer?.Dispose(); }
         if (_attached)
         {
@@ -539,17 +545,17 @@ internal sealed partial class LaunchPageController : IDisposable
         {
             OpenSubpage(_wardrobePage, e.Intent.Source);
         }
+        else if (command.Value == "ui.launch.restore")
+        {
+            if (_launchInProgress != 0) ShowLaunchingPage(e.Intent.Source);
+        }
         else if (command == PageBackCommand)
         {
-            if (_launchInProgress != 0)
-            {
-                return;
-            }
-
-            if (_shell.Stage.Navigation.Pop() && _returnFocus.TryPop(out XsrUiEntityId focus))
+            if (_shell.Stage.Navigation.Pop())
             {
                 UpdateTitleBar();
-                _shell.Renderer.Focus(focus, IsKeyboardIntent(e.Intent.Source));
+                if (_returnFocus.TryPop(out XsrUiEntityId focus))
+                    _shell.Renderer.Focus(focus, IsKeyboardIntent(e.Intent.Source));
             }
         }
         else if (command == WidgetAboutCommand || command == WidgetTriviaCommand || command == WidgetEchoCommand)
@@ -780,7 +786,10 @@ internal sealed partial class LaunchPageController : IDisposable
                 loader => loader.Loader == build.Key && loader.IsAddon) == true;
             if (isAddon)
             {
-                addons.Add(new MinecraftInstallAddon(build.Key, build.Value));
+                var catalog = _store.ReadAppliedValue(_store.Resolve(InstallCatalogStateContract.StateKey)) as InstallCatalogState;
+                var downloads = catalog?.Catalogs.FirstOrDefault(item => item.Loader == build.Key && item.GameVersion == _selectedInstallVersion)
+                    ?.Versions.FirstOrDefault(item => item.Id == build.Value)?.Downloads;
+                addons.Add(new MinecraftInstallAddon(build.Key, build.Value, downloads));
             }
             else if (primary is null)
             {
@@ -797,10 +806,10 @@ internal sealed partial class LaunchPageController : IDisposable
         if (string.IsNullOrWhiteSpace(root)) { _feedback.Warn("尚未确定 Minecraft 目录。"); return false; }
         _ = _installRunCommands.Dispatch(route, new MinecraftInstallCommand(
             root,
-            version,
+            _selectedInstallVersion,
             primary?.Kind,
             primary?.Build,
-            addons));
+            addons, version == _selectedInstallVersion ? null : version));
         // Manual starts watch their task immediately (parity with the legacy task manager).
         _intents.Emit(XsrSemanticId.Parse("ui.tasks.open"), default, XsrCorrelationId.Create());
         return true;
@@ -993,6 +1002,8 @@ internal sealed partial class LaunchPageController : IDisposable
 
     private void UpdateJavaInstallSubpageVisibility(string? preferredPage = null)
     {
+        XsrUiEntityId pagerEntity = _javaInstallEntities["JavaInstallPager"];
+        XsrUiEntityId[] previousPages = VisibleJavaInstallPages(pagerEntity);
         foreach (JavaInstallSubpage subpage in JavaInstallSubpages)
         {
             bool visible = ShouldShowJavaInstallSubpage(subpage);
@@ -1018,6 +1029,9 @@ internal sealed partial class LaunchPageController : IDisposable
             target = "JavaMinecraftPage";
         }
 
+        var nextPages = VisibleJavaInstallPages(pagerEntity);
+        if (!previousPages.SequenceEqual(nextPages))
+            _shell.Renderer.RebasePagerPage(pagerEntity, Array.IndexOf(nextPages, _javaInstallEntities[target]));
         ShowJavaInstallSubpage(target);
     }
 
@@ -1326,8 +1340,17 @@ internal sealed partial class LaunchPageController : IDisposable
         return (page, entities);
     }
 
+    private XsrUiEntityId _observedPage;
     private void OnFramePreparing(object? sender, EventArgs e)
     {
+        var currentPage = _shell.Stage.Navigation.Current;
+        if (_observedPage != currentPage)
+        {
+            if (_observedPage == _javaInstallPage) ResetInstallSelection();
+            _observedPage = currentPage;
+            UpdateTitleBar();
+        }
+        Publish(LaunchPageState.LaunchingVisibleKey, _launchInProgress != 0 && currentPage != _launchingPage);
         ProjectLibrary();
         RefreshJavaInstallPresentation();
         ProjectInstallCatalog();

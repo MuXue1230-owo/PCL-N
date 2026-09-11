@@ -47,7 +47,8 @@
       </StackPanel>
       <Button Key="LaunchingCancelButton" Label="{state launch.launching.cancel-label}"
               Content="{state launch.launching.cancel-label}" Command="ui.launch.cancel"
-              Height="40" Margin="32,16,32,16" />
+              Height="40" Margin="32,16,32,0" />
+      <ContentHost Key="LaunchingBottomInset" Height="24" />
     </StackPanel>
   </ContentHost>
 </Page>

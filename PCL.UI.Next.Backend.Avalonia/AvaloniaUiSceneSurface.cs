@@ -488,7 +488,7 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
         if (node.Pager is not { } pager) return;
         if (_pagerRevisions.TryGetValue(node.Entity, out long revision) && revision == pager.Revision) return;
         _pagerRevisions[node.Entity] = pager.Revision;
-        if (pager.IsDragging)
+        if (pager.IsDragging || pager.Position == pager.PageIndex && pager.ReleaseVelocity == 0)
         {
             AvaloniaUiMotion.Cancel(this, ("pager", node.Entity));
             return;

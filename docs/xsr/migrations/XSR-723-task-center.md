@@ -63,3 +63,18 @@ must leave the scene clean. Task ownership and cancel/dismiss routes remain Serv
 A progress node remains in the scene while its viewport intersects the parent clip, even when
 its initial fill has zero width. This lets the backend start the progress animation. Clipping
 continues to use the viewport; offscreen progress nodes remain culled.
+
+## Navigation and installation follow-up (2026-09-11)
+
+Window content reaches the system frame. Returning from launch progress only hides its page;
+cancel remains explicit. Navigation titles follow the staged page regardless of its entry point.
+Leaving Java installation clears transient selections. Service eligibility hides a successfully
+loaded empty catalog; pending or failed catalogs remain reachable. Catalog visibility changes
+preserve the current page identity without animating through removed indices. The launch widget
+persists its page through Settings. Scroll recycling must not replay entry animations.
+
+Install commands distinguish the Minecraft version from an optional instance name. Addon
+commands can carry the selected immutable download descriptors from the sealed catalog state;
+the installer validates the URL and file name and uses the existing checksum transfer pipeline.
+This prevents a later provider outage or a changed merge identifier from losing the selection.
+The optional descriptors preserve compatibility with callers that resolve by game and version.

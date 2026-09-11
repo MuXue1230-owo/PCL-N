@@ -19,6 +19,20 @@ internal sealed partial class LaunchPageController
             _installPrefetchTask = _installCatalogCommands.Dispatch(id, new InstallCatalogPrefetchCommand(game), cancellationToken: _lifetimeCancellation.Token).Completion;
     }
     private static InstallLoader? ParseInstallLoader(string? value) => Enum.TryParse(value?.Replace(" ", "", StringComparison.Ordinal), out InstallLoader loader) ? loader : null;
+    private void ResetInstallSelection()
+    {
+        _installGameChosen = false;
+        _selectedInstallVersion = "";
+        _selectedInstallBuilds.Clear();
+        _selectedInstallAddons.Clear();
+        _selectedInstallLoader = "原版 Minecraft";
+        _activeJavaInstallPage = "JavaMinecraftPage";
+        _catalogRequest = "";
+        _catalogSearch = "";
+        _catalogRevision = -1;
+        _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], "");
+        UpdateJavaInstallSubpageVisibility("JavaMinecraftPage");
+    }
     private void ChooseInstallGame(string version)
     {
         _installGameChosen = true;
@@ -196,6 +210,7 @@ internal sealed partial class LaunchPageController
         if (catalogState is not null && catalogState.Revision != _catalogStateRevision)
         {
             _catalogStateRevision = catalogState.Revision;
+            UpdateJavaInstallSubpageVisibility();
             _catalogRevision = -1;
             foreach (string key in _catalogCache.Keys.ToArray())
             {

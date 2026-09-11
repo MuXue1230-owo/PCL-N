@@ -115,8 +115,19 @@ internal static partial class Program
         void Select(string id)
         {
             var scene = fixture.Shell.Render(new(1024, 600));
+            if (id == "loader:0.16.0") fixture.Shell.Renderer.ReducedMotion = false;
             AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "CatalogRow:" + id).Entity));
-            fixture.Shell.Render(new(1024, 600));
+            scene = fixture.Shell.Render(new(1024, 600));
+            if (id == "loader:0.16.0")
+            {
+                var pager = FindByKey(fixture.Shell, scene, "JavaInstallPager").Pager!.Value;
+                AssertEqual((double)pager.PageIndex, pager.Position);
+                fixture.Shell.Renderer.ReducedMotion = true;
+                foreach (var node in scene.Nodes)
+                    if (fixture.Shell.Tree.GetComponent<XsrUiSegmentReveal>(node.Entity) is { } reveal)
+                        fixture.Shell.Renderer.SetSegmentRevealProgress(node.Entity, reveal.Expanded ? 1 : 0);
+                fixture.Shell.Render(new(1024, 600));
+            }
         }
         Select("game:1.20.1"); fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         Emit(fixture.Intents, "ui.install.page.fabric"); Select("loader:0.16.0");
@@ -132,10 +143,12 @@ internal static partial class Program
         AssertFalse(FindByKey(fixture.Shell, scene, "CatalogRow:loader:1.20.1_HD_U_I6").IsSelected);
         Emit(fixture.Intents, "ui.install.loader.vanilla");
         Emit(fixture.Intents, "ui.install.page.forge"); Select("loader:fixture");
-        Emit(fixture.Intents, "ui.install.page.optifine"); scene = fixture.Shell.Render(new(1024, 600));
-        var incompatible = FindByKey(fixture.Shell, scene, "CatalogRow:loader:1.20.1_HD_U_I6").Entity;
-        AssertFalse(fixture.Shell.Tree.GetComponent<XsrUiInput>(incompatible)!.Enabled);
-        AssertFalse(fixture.Shell.Renderer.Activate(incompatible));
+        scene = fixture.Shell.Render(new(1024, 600));
+        AssertFalse(IsVisible(fixture.Shell, "JavaOptiFineTab"));
+        Emit(fixture.Intents, "ui.page.back"); fixture.Shell.Render(new(1024, 600));
+        Emit(fixture.Intents, "ui.install.java"); scene = fixture.Shell.Render(new(1024, 600));
+        AssertFalse(IsVisible(fixture.Shell, "JavaFabricTab"));
+        AssertFalse(FindByKey(fixture.Shell, scene, "CatalogRow:game:1.20.1").IsSelected);
     }
     private sealed class BridgeInstallSource : IInstallCatalogSource
     {

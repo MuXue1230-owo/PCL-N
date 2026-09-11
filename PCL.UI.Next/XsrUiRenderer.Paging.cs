@@ -38,6 +38,18 @@ public sealed partial class XsrUiRenderer
         return true;
     }
 
+    /// <summary>Preserves page identity when catalog membership changes, without sliding through removed pages.</summary>
+    public void RebasePagerPage(XsrUiEntityId entity, int pageIndex)
+    {
+        if (!_tree.IsAlive(entity) || _tree.GetComponent<XsrUiPager>(entity) is not { } pager) return;
+        pager.PageCount = _tree.Children(entity).Count(IsVisible);
+        int index = Math.Clamp(pageIndex, 0, Math.Max(0, pager.PageCount - 1));
+        pager.IsDragging = false;
+        pager.ReleaseVelocity = 0;
+        pager.Position = index;
+        SetPagerTarget(entity, pager, index);
+    }
+
     /// <summary>Advances presentation from a backend clock; a live drag always owns its position.</summary>
     public void SetPagerPresentationPosition(XsrUiEntityId entity, double position)
     {

@@ -46,6 +46,19 @@ internal static partial class Program
         AssertEqual("0%", FindByKey(fixture.Shell, scene, "LaunchingPercentValue").Text);
         AssertFalse(HasKey(fixture.Shell, scene, "LaunchingSpeedRow"));
         AssertTrue(HasKey(fixture.Shell, scene, "LaunchingCancelButton"));
+        var card = FindByKey(fixture.Shell, scene, "LaunchingCard").Rect;
+        var cancel = FindByKey(fixture.Shell, scene, "LaunchingCancelButton").Rect;
+        AssertTrue(cancel.Y + cancel.Height < card.Y + card.Height);
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        Emit(fixture.Intents, "ui.page.back");
+        scene = fixture.Shell.Render(new(850, 500));
+        scene = fixture.Shell.Render(new(850, 500));
+        AssertFalse(HasKey(fixture.Shell, scene, "LaunchingPage"));
+        AssertTrue(HasKey(fixture.Shell, scene, "launch-bubble"));
+        Emit(fixture.Intents, "ui.launch.restore");
+        scene = fixture.Shell.Render(new(850, 500));
+        AssertTrue(HasKey(fixture.Shell, scene, "LaunchingPage"));
+        AssertEqual("正在启动", ReadCell(fixture.Store, LaunchPageState.TitleTransitionKey));
     }
 
     private static void LaunchOverlayNarratesProgressCells()

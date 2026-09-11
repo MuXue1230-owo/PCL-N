@@ -67,7 +67,12 @@ internal static partial class Program
         clock.Advance(TimeSpan.FromSeconds(3));
         string third = ReadCell(fixture.Store, LaunchPageState.WidgetHintKey);
         AssertTrue(second != third);
+        Emit(fixture.Intents, "ui.launch.widget.echo");
+        fixture.Shell.Render(AccountTestSize);
         fixture.Controller.Dispose();
+        AssertEqual("2", fixture.Foundation.Host.Settings.GetRawValue("UiLaunchWidgetPage").Value);
+        using var saved = System.Text.Json.JsonDocument.Parse(File.ReadAllText(Path.Combine(fixture.TemporaryDirectory, "settings.json")));
+        AssertEqual(2, saved.RootElement.GetProperty("integerOptions").GetProperty("UiLaunchWidgetPage").GetInt32());
         clock.Advance(TimeSpan.FromMinutes(1));
         AssertEqual(third, ReadCell(fixture.Store, LaunchPageState.WidgetHintKey));
     }

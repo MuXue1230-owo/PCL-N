@@ -305,7 +305,7 @@ internal static partial class Program
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, java, "CatalogRow:loader:fixture.2").Entity));
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(4, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
         AssertTrue(IsVisible(fixture.Shell, "JavaFabricApiTab"));
         AssertFalse(IsVisible(fixture.Shell, "JavaForgeTab"));
         AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
@@ -330,8 +330,8 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.install.page.quilt");
         Emit(fixture.Intents, "ui.install.loader.quilt");
         java = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual(3, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
-        AssertTrue(IsVisible(fixture.Shell, "JavaQslTab"));
+        AssertEqual(2, FindByKey(fixture.Shell, java, "JavaInstallPager").Pager!.Value.PageCount);
+        AssertFalse(IsVisible(fixture.Shell, "JavaQslTab"));
         AssertFalse(IsVisible(fixture.Shell, "JavaFabricApiTab"));
 
         Emit(fixture.Intents, "ui.page.back");
@@ -645,8 +645,8 @@ internal static partial class Program
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         XsrUiSceneNode root = FindByKey(fixture.Shell, scene, "task-bubble");
         // The bubble hugs the bottom-right dock inset.
-        AssertTrue(root.Rect.X >= 1280 - 18 - 160 && root.Rect.X <= 1280 - 18);
-        AssertTrue(root.Rect.Y >= 800 - 18 - 54 && root.Rect.Y <= 800 - 18);
+        AssertTrue(root.Rect.X >= 1280 - 18 - 48 && root.Rect.X <= 1280 - 18);
+        AssertTrue(root.Rect.Y >= 800 - 18 - 48 && root.Rect.Y <= 800 - 18);
         AssertTrue(root.Label!.Contains("40%", StringComparison.Ordinal));
 
         // The page owns the corner while it is open.
@@ -679,10 +679,12 @@ internal static partial class Program
         XsrUiProgress fill = fixture.Shell.Tree.GetComponent<XsrUiProgress>(bubble.FillEntity)!;
         AssertEqual(XsrUiProgressFillAnchor.Leading, fill.Anchor);
         AssertTrue(Math.Abs(fill.Target - 0.5) < 0.0001);
+        AssertFalse(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(node => node.Entity == bubble.FillEntity));
+        fixture.Shell.Tree.GetComponent<XsrUiInput>(bubble.Root)!.IsHovered = true;
         AssertTrue(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(node => node.Entity == bubble.FillEntity));
         fixture.Shell.Renderer.SetProgressPresentation(bubble.FillEntity, 0.5);
         var presented = fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Single(node => node.Entity == bubble.FillEntity);
-        AssertEqual(45d, presented.Rect.Width);
+        AssertEqual(16d, presented.Rect.Width);
         AssertEqual(3d, presented.Rect.Height);
 
         // The presented fill is the renderer-owned catch-up value; with the animation clock
@@ -711,6 +713,7 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.tasks.open");
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         AssertTrue(controller.IsStaged);
+        AssertEqual("任务中心", FindByKey(fixture.Shell, scene, "TitleSubpage").Text);
         // A clipped zero-width fill must reach the backend so its animation can start.
         AssertTrue(HasKey(fixture.Shell, scene, "TaskCardFill"));
         AssertTrue(HasKey(fixture.Shell, scene, "task-card:install:1"));
