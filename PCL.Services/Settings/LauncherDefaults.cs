@@ -75,6 +75,7 @@ public static class LauncherDefaults
         ["SystemUpdateChannel"] = 0,
         ["SystemSystemActivity"] = 0,
         ["UiDarkMode"] = 2,
+        ["UiLaunchWidgetPage"] = 0,
         ["UiLauncherTransparent"] = 600,
         ["UiBackgroundOpacity"] = 1000,
         ["UiBackgroundBlur"] = 0,

@@ -26,12 +26,14 @@ internal static partial class Program
         AssertTrue(result.Rejection is not null); AssertEqual(0, result.Selection.Count);
         result = service.Evaluate(new("1.20.1", [new(InstallLoader.Forge, "47.2.19")], InstallLoader.Forge, InstallLoader.OptiFine, ["I6"]));
         AssertTrue(result.Builds["I6"].Conflict is not null);
+        AssertTrue(!result.Loaders.Single(item => item.Loader == InstallLoader.OptiFine).Visible);
+        AssertTrue(!result.Loaders.Single(item => item.Loader == InstallLoader.LabyMod).Visible);
         var empty = service.Evaluate(new("", [])); AssertTrue(empty.Loaders.All(item => !item.Visible));
     }
     private sealed class EligibilityFixtureSource : IInstallCatalogSource
     {
         public Task<IReadOnlyList<InstallCatalogVersion>> GetGamesAsync(CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([new("1.20.1", "")]);
-        public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>([loader switch
+        public Task<IReadOnlyList<InstallCatalogVersion>> GetLoadersAsync(InstallLoader loader, string game, CancellationToken token) => Task.FromResult<IReadOnlyList<InstallCatalogVersion>>(loader == InstallLoader.LabyMod ? [] : [loader switch
         {
             InstallLoader.Fabric => new("0.16.0", ""),
             InstallLoader.OptiFabric => new("1.14.3", "", FabricRequirement: ">=0.8.0"),

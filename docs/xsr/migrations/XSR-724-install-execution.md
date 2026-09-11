@@ -61,3 +61,10 @@ never re-downloading present files.
 Metadata resolution and byte transfer are ports: `IMinecraftInstallMetadataSource`
 (production: HTTP over the shared client) and the per-request `ConnectionFactory`
 (production: HTTP connection adapter). Tests inject in-memory fakes — no network in CI.
+
+## Selected artifact retention (2026-09-11)
+
+Commands carry the base game version independently of the optional instance name. The Desktop
+projects selected addon download descriptors from sealed catalog state into the install command.
+The installer validates HTTPS and the leaf filename, then uses the normal verified transfer path.
+Legacy callers without descriptors still resolve the game-scoped catalog.

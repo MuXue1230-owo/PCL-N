@@ -12,14 +12,15 @@ using PCL.Xsr;
 
 namespace PCL.Services.Minecraft.Install;
 
-public sealed record MinecraftInstallAddon(InstallLoader Kind, string Version);
+public sealed record MinecraftInstallAddon(InstallLoader Kind, string Version, IReadOnlyList<InstallDownload>? Downloads = null);
 
 public sealed record MinecraftInstallCommand(
     string RootDirectory,
     string GameVersion,
     InstallLoader? Loader = null,
     string? LoaderBuild = null,
-    IReadOnlyList<MinecraftInstallAddon>? Addons = null);
+    IReadOnlyList<MinecraftInstallAddon>? Addons = null,
+    string? InstanceName = null);
 
 public sealed record MinecraftInstallResult(string InstanceId, string InstanceDirectory);
 
@@ -130,6 +131,9 @@ public sealed class MinecraftInstallService : IDisposable
         string instanceId = command.Loader is { } loader && command.LoaderBuild is { Length: > 0 } loaderBuild
             ? SafeName($"{game}-{loader.ToString().ToLowerInvariant()}{loaderBuild}")
             : gameName;
+        if (!string.IsNullOrWhiteSpace(command.InstanceName)) instanceId = SafeName(command.InstanceName);
+        if (command.Loader is not null && instanceId == gameName)
+            throw new InvalidOperationException("加载器实例名称不能与原版版本目录相同。");
         string root = Path.GetFullPath(command.RootDirectory);
         string versionsRoot = Path.Combine(root, "versions");
         string gameDirectory = Path.Combine(versionsRoot, gameName);
@@ -146,6 +150,8 @@ public sealed class MinecraftInstallService : IDisposable
         JsonObject? loaderJson = command.Loader is { } profileLoader && command.LoaderBuild is { } build
             ? await _metadata.FetchLoaderProfileJsonAsync(profileLoader, game, build, token).ConfigureAwait(false)
             : null;
+        if (loaderJson is null && instanceId != gameName)
+            loaderJson = new JsonObject { ["id"] = instanceId, ["inheritsFrom"] = gameName };
         if (loaderJson is not null)
         {
             loaderJson["id"] = instanceId;
@@ -269,11 +275,14 @@ public sealed class MinecraftInstallService : IDisposable
             string modsDirectory = Path.Combine(root, "mods");
             foreach (MinecraftInstallAddon addon in command.Addons)
             {
-                InstallDownload download = await ResolveAddonDownloadAsync(
+                IReadOnlyList<InstallDownload> downloads = await ResolveAddonDownloadsAsync(
                     game, addon, token).ConfigureAwait(false);
+                InstallDownload download = downloads[0];
                 Directory.CreateDirectory(modsDirectory);
                 addonFiles.Add(new PlannedFile(
-                    [download.Url.ToString()],
+                    downloads.Where(candidate => string.IsNullOrEmpty(download.Sha1)
+                        || string.Equals(candidate.Sha1, download.Sha1, StringComparison.OrdinalIgnoreCase))
+                        .Select(candidate => candidate.Url.ToString()).Distinct(StringComparer.Ordinal).ToArray(),
                     Path.Combine(modsDirectory, SafeName(download.FileName)),
                     download.Sha1,
                     download.Size));
@@ -464,9 +473,16 @@ public sealed class MinecraftInstallService : IDisposable
     }
 
 
-    private async Task<InstallDownload> ResolveAddonDownloadAsync(
+    private async Task<IReadOnlyList<InstallDownload>> ResolveAddonDownloadsAsync(
         string gameVersion, MinecraftInstallAddon addon, CancellationToken token)
     {
+        if (addon.Downloads is { Count: > 0 })
+        {
+            foreach (InstallDownload selected in addon.Downloads)
+                if (selected.Url.Scheme != Uri.UriSchemeHttps || Path.GetFileName(selected.FileName) != selected.FileName)
+                    throw new InvalidOperationException("附属 Mod 下载信息无效。");
+            return addon.Downloads;
+        }
         if (_catalog is null)
         {
             throw new InvalidOperationException("没有可用的安装目录源，无法解析附加组件。");
@@ -485,7 +501,7 @@ public sealed class MinecraftInstallService : IDisposable
 
             if (version.Downloads is { Count: > 0 })
             {
-                return version.Downloads[0];
+                return version.Downloads;
             }
 
             break;

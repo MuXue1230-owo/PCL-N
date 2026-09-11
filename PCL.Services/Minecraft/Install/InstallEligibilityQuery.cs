@@ -60,6 +60,9 @@ public sealed partial class InstallCatalogService
                 else visible &= (primary is null || InstallCompatibility.CanCombine(primary.Value, loader, query.GameVersion))
                     && selection.Keys.Where(kind => !InstallCompatibility.IsAddon(kind)).All(kind => InstallCompatibility.CanCombine(kind, loader, query.GameVersion));
                 if (loader == InstallLoader.OptiFine && primary == InstallLoader.Fabric && !selection.ContainsKey(InstallLoader.OptiFabric)) visible = false;
+                if (visible && _game == query.GameVersion && _loaders.TryGetValue(loader, out var loaded)
+                    && !loaded.Loading && loaded.Error is null && loaded.Revision > 0)
+                    visible = loaded.Versions.Any(candidate => InstallCompatibility.BuildConflict(loader, candidate, selection) is null);
                 return new InstallLoaderEligibility(loader, InstallCompatibility.IsAddon(loader), visible);
             }).ToArray();
             Dictionary<string, InstallBuildEligibility> builds = new(StringComparer.Ordinal);

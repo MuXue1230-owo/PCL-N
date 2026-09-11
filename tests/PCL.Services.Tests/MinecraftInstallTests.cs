@@ -164,6 +164,24 @@ internal static partial class Program
             ? "ASSET!"u8.ToArray()
             : "MODJAR!"u8.ToArray();
 
+    private static async ValueTask InstallKeepsGameIdentityAndSelectedAddonArtifact()
+    {
+        FakeMetadata metadata = new() { VanillaJson = VanillaJson(), AssetIndexJson = AssetIndexJson() };
+        using InstallFixture fixture = new(metadata);
+        string root = Path.Combine(Path.GetTempPath(), "nexa-install-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var artifact = new InstallDownload("Modrinth", "fabric-api.jar", new Uri("https://example.invalid/fabric-api.jar"), null, 7);
+            var result = await fixture.Install.InstallAsync(new MinecraftInstallCommand(root, "1.20.1", InstallLoader.Fabric, "0.16.9",
+                [new MinecraftInstallAddon(InstallLoader.FabricApi, "selected-build", [artifact])], "My Fabric"));
+            AssertTrue(result.IsSuccess);
+            AssertTrue(File.Exists(Path.Combine(root, "mods", "fabric-api.jar")));
+            string json = await File.ReadAllTextAsync(Path.Combine(root, "versions", "My Fabric", "My Fabric.json"));
+            AssertTrue(json.Contains("1.20.1", StringComparison.Ordinal));
+        }
+        finally { if (Directory.Exists(root)) Directory.Delete(root, true); }
+    }
+
     private static async ValueTask InstallRunsTheRealPipelineIntoTheVersionLibrary()
     {
         FakeMetadata metadata = new() { VanillaJson = VanillaJson(), AssetIndexJson = AssetIndexJson() };
