@@ -268,6 +268,7 @@ internal static partial class Program
         ("Forge and NeoForge stage official installers and validate generated artifacts", ForgeInstallStagesAndValidatesOutputs),
         ("Forge and NeoForge commit manifests after installer completion", ForgeAndNeoForgeCommitInstallerManifestLast),
         ("Forge rejects missing processor output without publishing a version", ForgeInstallRejectsMissingProcessorOutput),
+        ("Legacy launches receive native paths and preserve overrides", Sync(LegacyLaunchSuppliesNativePathWithoutOverridingExplicitConfiguration)),
         ("minecraft launch plan merges inherited and modern arguments", Sync(MinecraftLaunchPlanMergesInheritedAndModernArguments)),
         ("minecraft download source planner covers official and unlisted mirrors", Sync(MinecraftDownloadSourcePlannerCoversOfficialAndUnlistedMirrors)),
         ("minecraft Java runtime installer verifies and installs", MinecraftJavaRuntimeInstallerVerifiesAndInstalls),

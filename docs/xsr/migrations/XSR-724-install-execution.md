@@ -84,3 +84,8 @@ Validation: deterministic service tests cover Forge/NeoForge dispatch, staging i
 manifest-last publication, generated-library integrity and missing processor output. Real
 Windows installer probes completed for Forge 47.4.20 / Minecraft 1.20.1 and NeoForge
 21.1.235 / Minecraft 1.21.1. These probes validate installation, not interactive game rendering.
+
+Inherited and renamed Forge instances retain their display identity in `version_name`, while
+BootstrapLauncher `ignoreList` additionally names the actual resolved client JAR. Legacy
+manifests without JVM arguments receive `java.library.path` pointing to the executor's native
+extraction directory. An explicit manifest/custom JVM library path remains authoritative.

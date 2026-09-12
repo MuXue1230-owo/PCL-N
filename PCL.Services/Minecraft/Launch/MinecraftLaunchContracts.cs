@@ -271,6 +271,17 @@ public static class MinecraftLaunchPlanner
         if (request.JavaMajorVersion >= 18) args.Add("-Dfile.encoding=COMPAT");
         AddVersionJvmArguments(args, effectiveManifest, request, tokenContext);
         AddTokens(args, request.CustomJvmArguments, tokenContext);
+        // Legacy minecraftArguments manifests have no JVM section to declare the native directory.
+        if (!args.Any(argument => argument.StartsWith("-Djava.library.path=", StringComparison.Ordinal)))
+            args.Add("-Djava.library.path=" + nativesDirectory);
+        // BootstrapLauncher matches JAR filenames, not launcher instance identities.
+        for (int i = 0; i < args.Count; i++)
+            if (args[i].StartsWith("-DignoreList=", StringComparison.Ordinal))
+            {
+                string filename = Path.GetFileName(clientJar);
+                if (!args[i][13..].Split(',').Contains(filename, StringComparer.Ordinal))
+                    args[i] += "," + filename;
+            }
         args.Add("-cp");
         args.Add(classpathValue);
         args.Add(mainClass);

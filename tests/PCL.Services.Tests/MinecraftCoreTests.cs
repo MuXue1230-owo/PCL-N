@@ -490,13 +490,34 @@ internal static partial class Program
         AssertTrue(libraries.Any(token => token.OriginalName == "org.glavo.hmcl:lwjgl2-natives:2.9.3-linux-arm64"));
     }
 
+    internal static void LegacyLaunchSuppliesNativePathWithoutOverridingExplicitConfiguration()
+    {
+        string jar = Path.GetTempFileName();
+        try
+        {
+            var request = new MinecraftLaunchRequest
+            {
+                VersionJson = JsonNode.Parse("""{"id":"1.12.2-forge","mainClass":"net.minecraft.launchwrapper.Launch","minecraftArguments":"--version ${version_name} --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker"}""")!.AsObject(),
+                VersionId = "1.12.2-forge", InstanceDirectory = Path.GetTempPath(), MinecraftRootDirectory = Path.GetTempPath(),
+                ClientJarPath = jar, PlayerName = "Steve", PlayerUuid = "uuid", JavaMajorVersion = 8,
+            };
+            var plan = MinecraftLaunchPlanner.CreatePlan(request);
+            AssertEqual(1, plan.Arguments.Count(a => a == "-Djava.library.path=" + plan.NativesDirectory));
+            AssertTrue(plan.Arguments.ToList().IndexOf("-Djava.library.path=" + plan.NativesDirectory) < plan.Arguments.ToList().IndexOf("net.minecraft.launchwrapper.Launch"));
+            var custom = MinecraftLaunchPlanner.CreatePlan(request with { CustomJvmArguments = "-Djava.library.path=custom-natives" });
+            AssertEqual(1, custom.Arguments.Count(a => a.StartsWith("-Djava.library.path=", StringComparison.Ordinal)));
+            AssertTrue(custom.Arguments.Contains("-Djava.library.path=custom-natives"));
+        }
+        finally { File.Delete(jar); }
+    }
+
     internal static void MinecraftLaunchPlanMergesInheritedAndModernArguments()
     {
         JsonObject inherited = JsonNode.Parse("""
             { "mainClass": "net.minecraft.client.main.Main", "arguments": { "jvm": ["-Dparent=true"], "game": ["--versionType", "${version_type}", "--width", "${resolution_width}", "--height", "${resolution_height}"] }, "libraries": [{ "name": "org.example:parent:1.0" }] }
             """)!.AsObject();
         JsonObject current = JsonNode.Parse("""
-            { "id": "loader-1", "arguments": { "jvm": ["--sun-misc-unsafe-memory-access=allow", "-cp", "${classpath}"], "game": [{ "rules": [{ "action": "allow", "os": { "name": "windows" } }], "value": ["--username", "${auth_player_name}"] }] }, "libraries": [{ "name": "org.example:current:1.0" }] }
+            { "id": "loader-1", "arguments": { "jvm": ["--sun-misc-unsafe-memory-access=allow", "-DignoreList=asm,${version_name}.jar", "-cp", "${classpath}"], "game": [{ "rules": [{ "action": "allow", "os": { "name": "windows" } }], "value": ["--username", "${auth_player_name}"] }] }, "libraries": [{ "name": "org.example:current:1.0" }] }
             """)!.AsObject();
         MinecraftLaunchPlan plan = MinecraftLaunchPlanner.CreatePlan(new MinecraftLaunchRequest
         {
@@ -516,6 +537,9 @@ internal static partial class Program
         AssertTrue(plan.Arguments.Contains("Steve"));
         AssertTrue(plan.Arguments.Contains("${version_type}") is false);
         AssertEqual(2, plan.Libraries.Count);
+        AssertTrue(plan.Arguments.Contains("-Djava.library.path=" + plan.NativesDirectory));
+        AssertTrue(plan.Arguments.Single(a => a.StartsWith("-DignoreList=", StringComparison.Ordinal))
+            .Split(',').Contains(Path.GetFileName(plan.ClientJarPath), StringComparer.Ordinal));
         AssertEqual(1, plan.Arguments.Count(argument => argument == "--width"));
         AssertEqual(1, plan.Arguments.Count(argument => argument == "--height"));
     }
