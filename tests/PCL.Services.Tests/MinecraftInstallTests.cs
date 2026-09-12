@@ -13,9 +13,9 @@ using PCL.Xsr.State;
 
 namespace PCL.Services.Tests;
 
-// XSR-724: the real install pipeline — version documents written before transfer, the shared
+// XSR-724: the real install pipeline — version documents committed after transfer, the shared
 // download planners feeding one task-center task with file-accurate progress, processor-based
-// loaders rejected up front, and the Installed event that grows the version library.
+// loaders outside the migrated set rejected up front, and the Installed event that grows the version library.
 // Everything runs against in-memory metadata and connection fakes — no network.
 internal static partial class Program
 {
@@ -90,7 +90,7 @@ internal static partial class Program
         public MinecraftInstallService Install;
         public List<string> InstalledRoots = [];
 
-        public InstallFixture(FakeMetadata metadata, IInstallCatalogSource? catalog = null)
+        public InstallFixture(FakeMetadata metadata, IInstallCatalogSource? catalog = null, IMinecraftLoaderInstaller? loaderInstaller = null)
         {
             XsrStateStoreBuilder builder = new();
             TaskCenterStateContract.DeclareState(builder);
@@ -100,7 +100,7 @@ internal static partial class Program
             DownloadService downloads = new(Store);
             Install = new MinecraftInstallService(
                 Tasks, downloads, catalog, metadata: metadata,
-                connectionFactory: source => new ServingConnection(PayloadFor(source)));
+                connectionFactory: source => new ServingConnection(PayloadFor(source)), loaderInstaller: loaderInstaller);
             Install.Installed += root => InstalledRoots.Add(root);
         }
 
@@ -198,7 +198,7 @@ internal static partial class Program
             string entryError = fixture.Entry().ErrorMessage ?? "none";
             AssertTrue(result.IsSuccess, $"install failed: {result.Error?.Code}; entry={entryError}");
 
-            // Both version documents exist before any transfer; the loader one carries identity.
+            // Both version documents exist after successful transfers; the loader one carries identity.
             string vanilla = await File.ReadAllTextAsync(
                 Path.Combine(root, "versions", "1.20.1", "1.20.1.json"));
             AssertTrue(vanilla.Contains("\"1.20.1\"", StringComparison.Ordinal), "vanilla json missing id");
@@ -246,7 +246,7 @@ internal static partial class Program
         try
         {
             XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(
-                new MinecraftInstallCommand(root, "1.20.1", Loader: InstallLoader.Forge, LoaderBuild: "47.2.0"));
+                new MinecraftInstallCommand(root, "1.20.1", Loader: InstallLoader.Cleanroom, LoaderBuild: "0.3.0"));
             AssertFalse(result.IsSuccess);
             AssertFalse(Directory.Exists(root));
             AssertEqual(0, fixture.InstalledRoots.Count);

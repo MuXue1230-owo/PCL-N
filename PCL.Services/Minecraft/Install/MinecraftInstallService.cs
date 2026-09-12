@@ -44,7 +44,7 @@ public interface IMinecraftInstallMetadataSource
 /// Fabric family, the loader profile JSON), plans every file through the shared download
 /// planners with bmclapi failover ordering, writes the version directory, and reports the
 /// whole run as one task-center task with byte-accurate progress. Processor-based loaders
-/// (Forge, NeoForge, …) are rejected with an explicit not-yet-migrated message instead of a
+/// other than Forge and NeoForge are rejected with an explicit not-yet-migrated message instead of a
 /// half-built instance.
 /// </summary>
 public sealed class MinecraftInstallService : IDisposable
@@ -59,6 +59,7 @@ public sealed class MinecraftInstallService : IDisposable
     private readonly bool _ownsHttp;
     private readonly IMinecraftInstallMetadataSource _metadata;
     private readonly Func<string, IDownloadConnection>? _connectionFactory;
+    private readonly IMinecraftLoaderInstaller _loaderInstaller;
 
     public MinecraftInstallService(
         TaskCenterService tasks,
@@ -66,7 +67,8 @@ public sealed class MinecraftInstallService : IDisposable
         IInstallCatalogSource? catalog = null,
         HttpClient? http = null,
         IMinecraftInstallMetadataSource? metadata = null,
-        Func<string, IDownloadConnection>? connectionFactory = null)
+        Func<string, IDownloadConnection>? connectionFactory = null,
+        IMinecraftLoaderInstaller? loaderInstaller = null)
     {
         _tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
         _downloads = downloads ?? throw new ArgumentNullException(nameof(downloads));
@@ -75,6 +77,7 @@ public sealed class MinecraftInstallService : IDisposable
         _http = http ?? new HttpClient();
         _metadata = metadata ?? new HttpMinecraftInstallMetadataSource(_http);
         _connectionFactory = connectionFactory;
+        _loaderInstaller = loaderInstaller ?? new ForgeInstallService(_downloads, _http, connectionFactory);
     }
 
     /// <summary>Raised with the Minecraft root once an install commits, so the version library can rescan.</summary>
@@ -120,12 +123,15 @@ public sealed class MinecraftInstallService : IDisposable
         ITaskCenterTask task,
         CancellationToken token)
     {
-        if (command.Loader is not null && !IsProfileJsonLoader(command.Loader.Value))
+        bool processorLoader = command.Loader is InstallLoader.Forge or InstallLoader.NeoForge;
+        if (command.Loader is not null && !IsProfileJsonLoader(command.Loader.Value) && !processorLoader)
         {
             throw new InvalidOperationException(
                 $"{LoaderDisplayName(command.Loader.Value)} 安装需要执行安装器程序，此路径尚未迁移到 Nexa。");
         }
 
+        if (command.Loader is not null && string.IsNullOrWhiteSpace(command.LoaderBuild))
+            throw new InvalidOperationException("请选择加载器版本。");
         string game = command.GameVersion;
         string gameName = SafeName(game);
         string instanceId = command.Loader is { } loader && command.LoaderBuild is { Length: > 0 } loaderBuild
@@ -147,10 +153,10 @@ public sealed class MinecraftInstallService : IDisposable
         // half-install whose missing libraries would kill the JVM before its window appears.
         task.Report(StagePlan[0], "正在获取版本清单", 0.02, 0, 0, 0);
         JsonObject vanillaJson = await _metadata.FetchVanillaVersionJsonAsync(game, token).ConfigureAwait(false);
-        JsonObject? loaderJson = command.Loader is { } profileLoader && command.LoaderBuild is { } build
+        JsonObject? loaderJson = !processorLoader && command.Loader is { } profileLoader && command.LoaderBuild is { } build
             ? await _metadata.FetchLoaderProfileJsonAsync(profileLoader, game, build, token).ConfigureAwait(false)
             : null;
-        if (loaderJson is null && instanceId != gameName)
+        if (!processorLoader && loaderJson is null && instanceId != gameName)
             loaderJson = new JsonObject { ["id"] = instanceId, ["inheritsFrom"] = gameName };
         if (loaderJson is not null)
         {
@@ -380,6 +386,16 @@ public sealed class MinecraftInstallService : IDisposable
             task.Report(StagePlan[3], "下载完成", 0.999, totalFiles, totalFiles, 0);
         }
 
+        if (processorLoader)
+        {
+            task.Report(StagePlan[2], "正在准备加载器安装器", 0.99, totalFiles, totalFiles, 0);
+            loaderJson = await _loaderInstaller.InstallAsync(
+                new(root, game, instanceId, command.Loader!.Value, command.LoaderBuild!, vanillaJson),
+                new InstallerProgress(message => task.Report(StagePlan[2], message, 0.99, totalFiles, totalFiles, 0)), token).ConfigureAwait(false);
+            loaderJson["id"] = instanceId;
+            loaderJson["inheritsFrom"] = game;
+        }
+
         // The documents land only now: the instance becomes discoverable exactly when its
         // files are complete. Re-runs skip existing files, so this commit is cheap.
         await File.WriteAllTextAsync(
@@ -396,6 +412,9 @@ public sealed class MinecraftInstallService : IDisposable
         Installed?.Invoke(root);
         return new MinecraftInstallResult(instanceId, instanceDirectory);
     }
+
+    private sealed class InstallerProgress(Action<string> report) : IProgress<string>
+    { public void Report(string value) => report(value); }
 
     private static void TryDelete(string path)
     {
@@ -636,7 +655,7 @@ public sealed class MinecraftInstallService : IDisposable
     }
 
     /// <summary>Adapts one HttpClient GET to the download engine's connection port.</summary>
-    private sealed class HttpConnection(HttpClient client, string source) : IDownloadConnection
+    internal sealed class HttpConnection(HttpClient client, string source) : IDownloadConnection
     {
         private HttpResponseMessage? _response;
 

@@ -31,9 +31,9 @@ build, addon list); the runtime composer builds the router over the foundation h
 
 ## Scope boundary (explicit)
 
-Processor-based loaders (Forge, NeoForge, Cleanroom, OptiFine's installer path, LiteLoader,
+Deferred processor-based loaders (Cleanroom, OptiFine's installer path, LiteLoader,
 LabyMod) are rejected **before any disk write** with a message that names the missing path —
-XSR-604 deliberately deferred processor execution. The Fabric family (Fabric, Legacy Fabric,
+Forge and NeoForge use the isolated official installer flow described below. The Fabric family (Fabric, Legacy Fabric,
 Quilt) is fully supported because their profile JSON is declarative. The Java-runtime and
 Bedrock install flows remain on their own tracks (JavaRuntimeInstaller / XSR-721).
 
@@ -68,3 +68,19 @@ Commands carry the base game version independently of the optional instance name
 projects selected addon download descriptors from sealed catalog state into the install command.
 The installer validates HTTPS and the leaf filename, then uses the normal verified transfer path.
 Legacy callers without descriptors still resolve the game-scoped catalog.
+
+## Forge / NeoForge follow-up (2026-09-12)
+
+Launch resolution options (`--width`, `--height`) have one authoritative final value, even
+when loader/vanilla manifests already declare them. Forge early-display rejects duplicate options.
+
+Forge and NeoForge use official Maven installers in a private staging root. Services acquire
+compatible Java, prefetch declared installer libraries with the shared download engine, run
+`--installClient` without a console window, drain output and terminate the installer on cancellation.
+Only a successful, validated loader manifest is published to the real version library; staging
+launcher profiles never replace user profiles. Other processor loaders remain deferred.
+
+Validation: deterministic service tests cover Forge/NeoForge dispatch, staging isolation,
+manifest-last publication, generated-library integrity and missing processor output. Real
+Windows installer probes completed for Forge 47.4.20 / Minecraft 1.20.1 and NeoForge
+21.1.235 / Minecraft 1.21.1. These probes validate installation, not interactive game rendering.
