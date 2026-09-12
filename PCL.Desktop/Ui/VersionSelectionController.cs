@@ -396,7 +396,7 @@ internal sealed class VersionSelectionController : IDisposable
         if (_shell.Tree.GetComponent<XsrUiInput>(entity) is not null)
         { style.Hover = new(237, 243, 253); if (key is not "LibraryRow" and not "LibraryChooseDirectory" and not "LibraryDirectoryRow") { style.Background = new(240, 244, 250); style.FontSize = 13; } }
         if (key is "LibraryRowModify" or "LibraryRowSettings" or "LibraryRowDelete")
-        { style.CornerRadius = 16; style.Background = DesktopUiPalette.CapsuleBackground; style.Foreground = DesktopUiPalette.CapsuleForeground; style.TextAlignment = XsrUiTextAlignment.Center; }
+        { style.HoverExpand = true; style.CornerRadius = 16; style.Background = DesktopUiPalette.CapsuleBackground; style.Foreground = DesktopUiPalette.CapsuleForeground; style.TextAlignment = XsrUiTextAlignment.Center; }
         if (key == "LibraryAddPath") { style.Background = Blue; style.Foreground = new(255, 255, 255); style.Hover = new(23, 110, 225); }
         if (key == "LibraryDropdownDismiss") { style.Background = XsrUiColor.Transparent; style.Hover = XsrUiColor.Transparent; }
         if (key is "LibraryAddDirectory" or "LibraryRefresh") { style.HoverExpand = true; style.CornerRadius = key == "LibraryAddDirectory" ? 20 : 18; style.TextAlignment = XsrUiTextAlignment.Center; }

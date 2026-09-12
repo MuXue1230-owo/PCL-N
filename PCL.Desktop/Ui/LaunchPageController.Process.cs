@@ -79,7 +79,9 @@ internal sealed partial class LaunchPageController
             foreach (var id in _processDocks.Keys.Except(running.Select(item => item.SessionId)).ToArray())
             {
                 var dock = _processDocks[id];
-                _shell.Tree.Destroy(dock.Power); _shell.Tree.Destroy(dock.Logs); _processDocks.Remove(id);
+                DesktopBubbleLayout.SetVisible(_shell, _store, dock.Power, false, destroy: true);
+                DesktopBubbleLayout.SetVisible(_shell, _store, dock.Logs, false, destroy: true);
+                _processDocks.Remove(id);
             }
             for (int i = 0; i < running.Length; i++)
             {
@@ -91,10 +93,10 @@ internal sealed partial class LaunchPageController
                     _shell.Tree.GetComponent<XsrUiInput>(dock.Logs)!.Clickable = false;
                     _processDocks.Add(session.SessionId, dock);
                 }
-                PositionProcessButton(dock.Power, 76 + i * 112);
-                PositionProcessButton(dock.Logs, 132 + i * 112);
+
             }
         }
+        DesktopBubbleLayout.Arrange(_shell);
         if (_store.TryResolve(MinecraftProcessStateComposition.FailuresKey, out var failuresId))
         {
             var failures = _store.ReadCollection<MinecraftProcessFailure>(failuresId).Items;
@@ -120,27 +122,15 @@ internal sealed partial class LaunchPageController
         _shell.Tree.SetComponent(entity, new XsrUiInput { Clickable = true, Focusable = true });
         _shell.Tree.SetComponent(entity, new XsrUiSemantic(XsrUiSemanticRole.Button, session.InstanceId + " · " + label));
         _shell.Tree.SetComponent(entity, new XsrUiCommandBinding(XsrSemanticId.Parse("ui.process." + action + "." + session.SessionId.ToString("N"))));
-        _shell.Tree.SetComponent(entity, new XsrUiVisualStyle
-        {
-            Background = DesktopUiPalette.CapsuleBackground,
-            Foreground = action == "logs" ? new(130, 139, 152) : DesktopUiPalette.CapsuleForeground,
-            Hover = DesktopUiPalette.CapsuleHover,
-            CornerRadius = 24
-        });
+        _shell.Tree.SetComponent(entity, DesktopBubbleLayout.Style());
+        DesktopBubbleLayout.Register(_shell, entity, 2);
         var image = _shell.Tree.Create("process-icon");
         _shell.Tree.Attach(image, entity);
         _shell.Tree.SetComponent(image, new XsrUiElement { Width = 20, Height = 20, HorizontalAlignment = XsrUiAlignment.Center, VerticalAlignment = XsrUiAlignment.Center });
         _shell.Tree.SetComponent(image, new XsrUiImage("lucide/" + icon));
+        _shell.Tree.SetComponent(image, new XsrUiVisualStyle { Foreground = DesktopUiPalette.CapsuleForeground });
         _shell.Stage.Show(entity);
         return entity;
-    }
-
-    private void PositionProcessButton(XsrUiEntityId entity, double right)
-    {
-        var element = _shell.Tree.GetComponent<XsrUiElement>(entity)!;
-        if (element.Margin.Right == right) return;
-        element.Margin = element.Margin with { Right = right };
-        _shell.Tree.MarkDirty(entity, XsrUiDirtyKinds.Layout);
     }
 
     private bool HandleProcessIntent(DesktopUiIntentEventArgs e)

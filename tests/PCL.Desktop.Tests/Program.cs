@@ -95,6 +95,7 @@ internal static partial class Program
         ("trivia rotates every three seconds without foreign tree writes and stops on disposal", TriviaTimerPublishesOnlyStateAndStops),
         ("install failure leaves the idle tree clean", InstallFailureLeavesTheIdleTreeClean),
         ("staged task page renders clean between changes", StagedTaskPageRendersCleanBetweenChanges),
+        ("bubbles share a vertical dock and closing bubbles release slots", BubblesShareVerticalDockAndReleaseHiddenSlots),
         ("task bubble follows the center summary and yields to the page", TaskBubbleFollowsSummaryAndYieldsToPage),
         ("task bubble shows a compact track with aggregated progress", TaskBubbleUsesCompactProgressTrack),
         ("task center page reconciles cards and routes cancel dismiss and clear", TaskCenterPageReconcilesCardsAndRoutesActions),

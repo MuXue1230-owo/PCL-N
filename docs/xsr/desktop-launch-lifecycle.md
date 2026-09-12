@@ -10,3 +10,5 @@ Host Services own Java selection, runtime acquisition, process supervision and c
 - The selected launching instance exposes a disabled launch action with progress. Version rows place the selected check before the name and expose modify, settings and delete actions.
 
 Validation: Desktop input/navigation regressions, Service process/Java contracts, architecture checks, trim and NativeAOT shell smoke.
+
+Shell bubbles share a bottom-up vertical dock. Hidden and closing bubbles reserve no slot; overlay motion supplies interruptible entry, exit and reflow with reduced-motion support. Version rows reserve a check column before the icon, and actions use the existing expanding-capsule primitive.

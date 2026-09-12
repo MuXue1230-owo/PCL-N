@@ -38,7 +38,7 @@ internal static partial class Program
 
     private static void VersionRowActionsKeepSelectionDistinct()
     {
-        using var fixture = new LaunchPageFixture(new ImmediateInstanceSource([Instance("chosen")]), addProfile: true);
+        using var fixture = new LaunchPageFixture(new ImmediateInstanceSource([Instance("chosen"), Instance("other")]), addProfile: true);
         fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         fixture.Shell.Renderer.ReducedMotion = true;
         var scene = fixture.Shell.Render(new(850, 500));
@@ -46,12 +46,22 @@ internal static partial class Program
         scene = fixture.Shell.Render(new(850, 500));
         var tick = FindByKey(fixture.Shell, scene, "LibraryRowCheck:version:chosen");
         var name = FindByKey(fixture.Shell, scene, "LibraryRowName:version:chosen");
-        AssertTrue(tick.Rect.X + tick.Rect.Width <= name.Rect.X);
+        var icon = FindByKey(fixture.Shell, scene, "LibraryRowIcon:version:chosen");
+        AssertTrue(tick.Rect.X + tick.Rect.Width <= icon.Rect.X);
+        AssertEqual(icon.Rect.X, FindByKey(fixture.Shell, scene, "LibraryRowIcon:version:other").Rect.X);
+        AssertEqual(name.Rect.X, FindByKey(fixture.Shell, scene, "LibraryRowName:version:other").Rect.X);
+        AssertFalse(HasKey(fixture.Shell, scene, "LibraryRowCheck:version:other"));
         AssertFalse(HasKey(fixture.Shell, scene, "LibraryRowSelected:version:chosen"));
         foreach (string action in new[] { "Modify", "Settings", "Delete" })
             AssertEqual(32d, FindByKey(fixture.Shell, scene, "LibraryRow" + action + ":version:chosen").Rect.Height);
         var settings = FindByKey(fixture.Shell, scene, "LibraryRowSettings:version:chosen");
+        AssertEqual(32d, settings.Rect.Width);
         var point = new XsrUiPoint(settings.Rect.X + 15, settings.Rect.Y + 15);
+        fixture.Shell.Renderer.PointerMoved(point);
+        scene = fixture.Shell.Render(new(850, 500));
+        settings = FindByKey(fixture.Shell, scene, "LibraryRowSettings:version:chosen");
+        AssertEqual(76d, settings.Rect.Width);
+        point = new(settings.Rect.X + settings.Rect.Width / 2, settings.Rect.Y + 15);
         AssertTrue(fixture.Shell.Renderer.PointerPressed(point));
         AssertTrue(fixture.Shell.Renderer.PointerReleased(point));
         fixture.Controller.Versions.WaitUntilIdle().GetAwaiter().GetResult();
@@ -86,4 +96,40 @@ internal static partial class Program
         AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "DialogAccept").Entity));
         AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(new(850, 500)), "DialogCard"));
     }
+    private static void BubblesShareVerticalDockAndReleaseHiddenSlots()
+    {
+        using var fixture = ComposeLaunchOverlayFixture(new RecordingStartRoute());
+        using DesktopTaskBubblePresenter bubble = new(fixture.Shell, fixture.Store);
+        var id = Guid.NewGuid();
+        var sessions = fixture.Store.Resolve(MinecraftProcessStateComposition.SessionsKey);
+        var session = new MinecraftProcessSnapshot(id, "playable", 123, MinecraftProcessState.Running, null, DateTimeOffset.UtcNow, null);
+        fixture.Store.PublishDelta(sessions, new XsrCollectionDelta<MinecraftProcessSnapshot, Guid>(0, [session], []));
+        var scene = fixture.Shell.Render(new(850, 500));
+        var power = FindByKey(fixture.Shell, scene, "process-stop-" + id);
+        var logs = FindByKey(fixture.Shell, scene, "process-logs-" + id);
+        AssertEqual(434d, power.Rect.Y);
+        AssertEqual(power.Rect.X, logs.Rect.X);
+        AssertEqual(power.Rect.Y - 58, logs.Rect.Y);
+        AssertEqual(XsrUiOverlayMotionKind.Notification, power.OverlayMotion);
+        AssertEqual(XsrUiOverlayMotionKind.Notification, logs.OverlayMotion);
+        var style = fixture.Shell.Tree.GetComponent<XsrUiVisualStyle>(power.Entity)!;
+        AssertEqual(XsrUiSurfaceKind.Solid, style.Surface);
+        AssertEqual(DesktopUiPalette.CapsuleBackground, style.Background);
+        var image = fixture.Shell.Tree.Children(power.Entity).Single();
+        AssertEqual(DesktopUiPalette.CapsuleForeground, fixture.Shell.Tree.GetComponent<XsrUiVisualStyle>(image)!.Foreground);
+        using var task = fixture.Foundation.Host.Tasks.Begin(new PCL.Services.Tasks.TaskCenterStart("dock-test", "下载", ["文件"]));
+        scene = fixture.Shell.Render(new(850, 500));
+        var root = FindByKey(fixture.Shell, scene, "task-bubble");
+        AssertEqual(root.Rect.X, FindByKey(fixture.Shell, scene, "process-stop-" + id).Rect.X);
+        AssertEqual(root.Rect.Y - 58, FindByKey(fixture.Shell, scene, "process-stop-" + id).Rect.Y);
+        bubble.SetPageVisible(true);
+        scene = fixture.Shell.Render(new(850, 500));
+        AssertTrue(FindByKey(fixture.Shell, scene, "task-bubble").IsOverlayClosing);
+        AssertEqual(434d, FindByKey(fixture.Shell, scene, "process-stop-" + id).Rect.Y);
+        fixture.Store.PublishDelta(sessions, new XsrCollectionDelta<MinecraftProcessSnapshot, Guid>(1, [session with { State = MinecraftProcessState.Exited }], []));
+        scene = fixture.Shell.Render(new(850, 500));
+        AssertTrue(FindByKey(fixture.Shell, scene, "process-stop-" + id).IsOverlayClosing);
+        AssertFalse(FindByKey(fixture.Shell, scene, "process-stop-" + id).IsClickable);
+    }
+
 }
