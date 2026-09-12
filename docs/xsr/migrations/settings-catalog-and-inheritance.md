@@ -1,0 +1,15 @@
+# Settings catalog and inheritance contract
+
+Stages 1–2 of `settings-next-development-plan.md` extend XSR-501/503.
+
+- Product IA and value schema are separate contracts. The catalog preserves the attachment's global nine pages, instance nine pages and ten instance-settings sections, including developer sections. Actions, facts, groups and choices are not persisted settings. Stable IDs must not change when labels change.
+- A catalog entry may reserve an unavailable capability without inventing a working value contract. Its schema reference is absent until that capability's type/default/validation contract is defined; its availability remains NotImplemented. This is distinct from platform, dependency and transient availability. No UI may enable such an entry merely because a legacy key exists.
+- The initial value schema covers the settings foundation: Java policy, memory, window, arguments, network, animation and developer preferences. It declares type, enum domain, range/unit, default, scope, legacy mapping, export policy and application timing. Further value schemas are additive; their final catalog positions already exist.
+- Effective resolution is Builtin < Global < Instance < Profile < Temporary. An absent override means inherit; Auto is an explicit policy with no custom payload. Custom values cannot use sentinels to represent inheritance. Profile and Temporary resolution is testable but mutation routes reject them until their capability ships.
+- A versioned `NexaSettingsLayers` text entry inside the existing launcher JSON holds new global values and instance overrides. It is persisted together with mapped legacy values in one SettingsService batch, preserving XSR-503 unknown fields. No second file or Desktop-owned store is introduced. Instance identity is a caller-supplied directory-qualified opaque ID, not just the display name.
+- Service queries return immutable effective values, source, timing and validation errors. The foundation routers register and seal catalog/effective/export/import-preview queries and mutation/import-apply commands. Services own all validation and persistence. Queries never accept credentials through presentation metadata.
+- Import is preview-first with a revision token, then validates again and applies a single durable batch. Secret/local-only entries are excluded and rejected on import. Unsupported layered schemas fail closed; the original file is not overwritten.
+- Preview resolution has no persistence or publication side effects. Save failure leaves state/revision unchanged. Reset removes only the targeted override. Legacy consumers retain their existing keys; consumer integration is stage 4, not implied by stage 2.
+- No changes to the canonical stable/alpha/beta/ci product grammar. Duplicate title/server entries refer to a shared schema key. Developer visibility grants no permissions.
+
+Validation requires catalog coverage/identity, inheritance and isolation, Auto versus inherit, batch failure, legacy/unknown-data roundtrip, stale import, secret exclusion, architecture gates, CoreCLR and NativeAOT services, and Desktop native/trim shell smoke.
