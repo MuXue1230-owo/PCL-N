@@ -357,7 +357,7 @@ internal static partial class Program
                 metadataStore: metadataStore),
             host.Accounts,
             host.Settings,
-            new JavaSelectionService(new InMemoryJavaLocator([])),
+            new JavaSelectionService(javaLocator ?? new InMemoryJavaLocator([])),
             installer,
             new MinecraftLaunchExecutor(processes),
             new MinecraftLaunchPlatform(

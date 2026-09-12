@@ -50,6 +50,7 @@ public sealed record MinecraftLaunchPreparation(
 /// </summary>
 public sealed class MinecraftLaunchCoordinator
 {
+    private static readonly int[] SelectableJavaMajors = [8, 16, 17, 21, 25];
     private static readonly TimeSpan StageHeartbeatInterval = TimeSpan.FromMilliseconds(120);
     private const double StageHeartbeatStep = 0.05d;
     private const double StageHeartbeatCeiling = 0.92d;
@@ -72,7 +73,7 @@ public sealed class MinecraftLaunchCoordinator
     private readonly Action<int>? _gameWindowAppeared;
     private readonly object _launchGate = new();
     private CancellationTokenSource? _activeLaunch;
-    private sealed record JavaChoice(bool Approve, ResolvedJava? Manual = null);
+    private sealed record JavaChoice(bool Approve, ResolvedJava? Manual = null, string? Component = null, int? Major = null);
     private TaskCompletionSource<JavaChoice>? _acquisitionDecision;
     private JavaRequirementResolution? _pendingJavaRequirement;
     private readonly IAuthlibInjectorProvider? _authlib;
@@ -143,6 +144,34 @@ public sealed class MinecraftLaunchCoordinator
 
         _log?.Info("Java", $"Runtime acquisition decision approve={approve}.");
         return decision.TrySetResult(new(approve));
+    }
+
+    public async ValueTask<XsrResult> SelectJavaVersionAsync(int major, CancellationToken cancellationToken = default)
+    {
+        TaskCompletionSource<JavaChoice>? decision;
+        JavaRequirementResolution? requirement;
+        lock (_launchGate) { decision = _acquisitionDecision; requirement = _pendingJavaRequirement; }
+        if (decision is null || requirement is null || major is not (8 or 16 or 17 or 21 or 25))
+            return XsrResult.Failure(MinecraftErrors.InvalidRequest("没有待处理的 Java 选择。"));
+        var requested = major == 8
+            ? new JavaVersionRange(new Version(1, 8), JavaVersionRange.Java8Maximum)
+            : new JavaVersionRange(new Version(major, 0), new Version(major, int.MaxValue));
+        if (!requirement.Range.TryIntersect(requested, out var range))
+            return XsrResult.Failure(MinecraftErrors.JavaUnavailable($"Java {major} 不兼容此游戏版本。"));
+        var narrowed = JavaRequirementResolution.Valid(range, major.ToString(CultureInfo.InvariantCulture));
+        var selected = await Task.Run(async () => await _javaSelection.SelectAsync(narrowed, new AutoSelectJavaPreference(), cancellationToken).ConfigureAwait(false), cancellationToken).ConfigureAwait(false);
+        var acquisition = JavaRuntimeAcquisitionPlanner.Plan(narrowed);
+        if (!selected.Success && !acquisition.CanAutoDownload)
+            return XsrResult.Failure(MinecraftErrors.JavaUnavailable("此 Java 版本无法自动下载。"));
+        JavaChoice choice = selected.Success && selected.SelectedJava is { } java
+            ? new(false, new ResolvedJava(SelectExecutable(java.Installation), java.Installation.MajorVersion))
+            : new(true, Component: acquisition.DownloadComponent, Major: major);
+        lock (_launchGate)
+        {
+            if (!ReferenceEquals(_acquisitionDecision, decision) || !decision.TrySetResult(choice))
+                return XsrResult.Failure(MinecraftErrors.InvalidRequest("Java 选择已失效。"));
+        }
+        return XsrResult.Success();
     }
 
     public async ValueTask<XsrResult> SelectJavaAsync(string path, CancellationToken cancellationToken = default)
@@ -772,9 +801,11 @@ public sealed class MinecraftLaunchCoordinator
                 "the Java runtime acquisition was declined."));
         }
 
+        if (choice.Component is not null)
+            _progress?.Report(new MinecraftLaunchStageReport(MinecraftLaunchStages.GetJava, 0, Method: $"未找到 Java {choice.Major}，正在自动下载"));
         operation?.Stage("install_java", $"component={acquisition.DownloadComponent}");
         string acquiredExecutable = await _javaInstaller.InstallAsync(
-            acquisition.DownloadComponent,
+            choice.Component ?? acquisition.DownloadComponent,
             javaRuntimeRootDirectory,
             progress: null,
             cancellationToken).ConfigureAwait(false);
@@ -784,7 +815,7 @@ public sealed class MinecraftLaunchCoordinator
                 "the acquired Java runtime did not provide an executable."));
         }
 
-        int major = JavaMajor(selection.Requirement.Range.Minimum);
+        int major = choice.Major ?? JavaMajor(selection.Requirement.Range.Minimum);
         return XsrResult.Success(new ResolvedJava(SelectWindowedSibling(acquiredExecutable), major));
     }
 
@@ -806,7 +837,10 @@ public sealed class MinecraftLaunchCoordinator
             _acquisitionDecision = decision;
             _pendingJavaRequirement = requirement;
         }
-        _progress?.RequestAcquisition(acquisition.DownloadComponent ?? "unknown", majorVersion);
+        int[] choices = SelectableJavaMajors.Where(candidate => requirement.Range.TryIntersect(
+            candidate == 8 ? new JavaVersionRange(new Version(1, 8), JavaVersionRange.Java8Maximum)
+                : new JavaVersionRange(new Version(candidate, 0), new Version(candidate, int.MaxValue)), out _)).ToArray();
+        _progress?.RequestAcquisition(acquisition.DownloadComponent ?? "unknown", majorVersion, Array.AsReadOnly(choices));
         _log?.Info("Java", $"Runtime acquisition awaiting approval component={acquisition.DownloadComponent}.");
         try
         {

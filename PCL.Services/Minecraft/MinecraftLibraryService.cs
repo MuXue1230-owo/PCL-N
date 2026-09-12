@@ -158,6 +158,42 @@ public sealed class MinecraftLibraryService : IDisposable
         return XsrResult.Success();
     }
 
+    public async Task<XsrResult> DeleteInstanceAsync(string root, string instanceId, CancellationToken cancellationToken = default)
+    {
+        return await Task.Run(async () =>
+        {
+            Task<XsrResult> refresh;
+            lock (_gate)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (!PathComparer.Equals(root, _document.ActiveDirectory) || !_snapshot.Instances.Any(item => item.Id == instanceId)
+                    || string.IsNullOrWhiteSpace(instanceId) || instanceId is "." or ".." || instanceId.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                    || instanceId.Contains('/') || instanceId.Contains('\\'))
+                    return XsrResult.Failure(MinecraftErrors.InvalidRequest("版本路径无效。"));
+                if (_settings.StateStore.TryResolve(Process.MinecraftProcessStateComposition.SessionsKey, out var sessions)
+                    && _settings.StateStore.ReadCollection<Process.MinecraftProcessSnapshot>(sessions).Items.Any(item => item.InstanceId == instanceId
+                        && item.State is Process.MinecraftProcessState.Created or Process.MinecraftProcessState.Running))
+                    return XsrResult.Failure(MinecraftErrors.InvalidRequest("请先结束此版本的游戏进程。"));
+                try
+                {
+                    string versions = Path.Combine(root, "versions");
+                    string source = Path.Combine(versions, instanceId);
+                    string recycle = Path.Combine(root, ".recycle");
+                    foreach (string path in new[] { root, versions, source, recycle })
+                        if (Directory.Exists(path) && (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                            return XsrResult.Failure(MinecraftErrors.InvalidRequest("不能移除链接目录中的版本。"));
+                    Directory.CreateDirectory(recycle);
+                    Directory.Move(source, Path.Combine(recycle, instanceId + "-" + Guid.NewGuid().ToString("N")));
+                    refresh = BeginScanLocked(root, cancellationToken);
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException)
+                { return XsrResult.Failure(MinecraftErrors.InvalidRequest(ex.Message)); }
+            }
+            return await refresh.ConfigureAwait(false);
+        }, cancellationToken).ConfigureAwait(false);
+    }
+
     public XsrResult SelectInstance(string root, string instanceId)
     {
         lock (_gate)
@@ -299,6 +335,7 @@ public sealed class MinecraftLibraryService : IDisposable
 public sealed record MinecraftLibraryRefreshCommand;
 public sealed record MinecraftLibraryDirectoryCommand(string Path, bool Add = false);
 public sealed record MinecraftLibraryForgetCommand(string Path);
+public sealed record MinecraftLibraryDeleteCommand(string RootDirectory, string InstanceId);
 public sealed record MinecraftLibrarySelectCommand(string RootDirectory, string InstanceId);
 public sealed record MinecraftLibraryRenameCommand(string Path, string Name);
 public static class MinecraftLibraryRoutes
@@ -306,6 +343,7 @@ public static class MinecraftLibraryRoutes
     public static readonly XsrSemanticId Refresh = XsrSemanticId.Parse("minecraft.library.refresh");
     public static readonly XsrSemanticId Directory = XsrSemanticId.Parse("minecraft.library.directory");
     public static readonly XsrSemanticId Forget = XsrSemanticId.Parse("minecraft.library.forget");
+    public static readonly XsrSemanticId Delete = XsrSemanticId.Parse("minecraft.library.delete");
     public static readonly XsrSemanticId Select = XsrSemanticId.Parse("minecraft.library.select");
     public static readonly XsrSemanticId Rename = XsrSemanticId.Parse("minecraft.library.rename");
 }

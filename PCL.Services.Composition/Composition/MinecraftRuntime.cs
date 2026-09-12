@@ -169,6 +169,7 @@ public static class MinecraftRuntimeComposer
         commandBuilder.Register(MinecraftRouteIds.Launch, MinecraftCommands.CreateLaunchHandler(executor));
         commandBuilder.Register(MinecraftRouteIds.LaunchCancel, MinecraftCommands.CreateCancelLaunchHandler(coordinator));
         commandBuilder.Register(MinecraftRouteIds.AcquireDecide, MinecraftCommands.CreateAcquireDecideHandler(coordinator));
+        commandBuilder.Register<MinecraftSelectJavaVersionCommand>(MinecraftRouteIds.JavaVersionSelect, (command, token) => coordinator.SelectJavaVersionAsync(command.Major, token));
         commandBuilder.Register<MinecraftSelectJavaCommand>(MinecraftRouteIds.JavaSelect, (command, token) => coordinator.SelectJavaAsync(command.Path, token));
         commandBuilder.Register(MinecraftRouteIds.ProcessCancel, MinecraftCommands.CreateCancelProcessHandler(processService));
         XsrQueryRouterBuilder queryBuilder = new();

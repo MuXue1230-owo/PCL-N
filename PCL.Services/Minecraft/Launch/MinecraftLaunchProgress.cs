@@ -90,6 +90,7 @@ public static class MinecraftLaunchProgressState
     // user decides (the legacy launcher asks before auto-downloading a runtime).
     public static readonly XsrSemanticId AcquirePendingKey = XsrSemanticId.Parse("minecraft.java.acquire.pending");
     public static readonly XsrSemanticId AcquireComponentKey = XsrSemanticId.Parse("minecraft.java.acquire.component");
+    public static readonly XsrSemanticId JavaChoicesKey = XsrSemanticId.Parse("minecraft.java.choice.versions");
     public static readonly XsrSemanticId AcquireMajorKey = XsrSemanticId.Parse("minecraft.java.acquire.major");
 
     public static void DeclareState(XsrStateStoreBuilder builder)
@@ -111,6 +112,7 @@ public static class MinecraftLaunchProgressState
         builder.Cell<bool>(AcquirePendingKey, OwnerName);
         builder.Cell<string>(AcquireComponentKey, OwnerName);
         builder.Cell<int>(AcquireMajorKey, OwnerName);
+        builder.Cell<IReadOnlyList<int>>(JavaChoicesKey, OwnerName);
     }
 
     private static MinecraftLaunchProgressSnapshot ReadSnapshot(
@@ -148,12 +150,13 @@ public class MinecraftLaunchProgressPublisher(XsrStateStore store)
     }
 
     /// <summary>Marks a Java runtime acquisition as awaiting the user's decision.</summary>
-    public void RequestAcquisition(string component, int majorVersion)
+    public void RequestAcquisition(string component, int majorVersion, IReadOnlyList<int>? choices = null)
     {
         try
         {
             // Publish payload before the ready flag so a UI observer never opens a decision
             // surface with a stale component or Java major from an earlier acquisition.
+            _store.Publish(_store.Resolve(MinecraftLaunchProgressState.JavaChoicesKey), choices ?? Array.AsReadOnly(new[] { majorVersion }));
             _store.Publish(_acquireComponentId, component);
             _store.Publish(_acquireMajorId, majorVersion);
             _store.Publish(_acquirePendingId, true);

@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Diagnostics;
+using System.Text;
 using PCL.Services.Logging;
+using PCL.Services.Minecraft.Crash;
 using PCL.Xsr;
 using PCL.Xsr.State;
 
@@ -47,6 +49,12 @@ public sealed class MinecraftProcessSession : IAsyncDisposable
     private readonly object _gate = new();
     private MinecraftProcessSnapshot _snapshot;
     private readonly MinecraftProcessSnapshot _createdSnapshot;
+    private readonly Queue<string> _evidence = new();
+    private readonly Queue<string> _errorEvidence = new();
+    private readonly CancellationTokenSource _drainLifetime = new();
+    private readonly Task _outputDrain;
+    private readonly Task _errorDrain;
+    private int _disposed;
 
     internal MinecraftProcessSession(System.Diagnostics.Process process, string instanceId, Guid sessionId, DateTimeOffset startedAt)
     {
@@ -55,8 +63,49 @@ public sealed class MinecraftProcessSession : IAsyncDisposable
         _process = process;
         _snapshot = new MinecraftProcessSnapshot(sessionId, instanceId, process.Id, MinecraftProcessState.Created, null, startedAt, null);
         _createdSnapshot = _snapshot;
+        _outputDrain = process.StartInfo.RedirectStandardOutput ? Task.Run(() => DrainAsync(process.StandardOutput, _evidence)) : Task.CompletedTask;
+        _errorDrain = process.StartInfo.RedirectStandardError ? Task.Run(() => DrainAsync(process.StandardError, _errorEvidence)) : Task.CompletedTask;
         _process.EnableRaisingEvents = true;
         _process.Exited += OnExited;
+    }
+
+    private async Task DrainAsync(StreamReader reader, Queue<string> evidence)
+    {
+        char[] buffer = new char[2048];
+        StringBuilder line = new();
+        try
+        {
+            int read;
+            while ((read = await reader.ReadAsync(buffer.AsMemory(), _drainLifetime.Token).ConfigureAwait(false)) > 0)
+                for (int i = 0; i < read; i++)
+                {
+                    char c = buffer[i];
+                    if (c == '\n' || line.Length == 2048)
+                    {
+                        AddEvidence(evidence, line.ToString());
+                        line.Clear();
+                    }
+                    if (c is not ('\n' or '\r')) line.Append(c);
+                }
+        }
+        catch (Exception ex) when (ex is IOException or ObjectDisposedException or OperationCanceledException) { }
+        finally { if (line.Length > 0) AddEvidence(evidence, line.ToString()); }
+    }
+
+    private void AddEvidence(Queue<string> evidence, string line)
+    {
+        lock (_gate)
+        {
+            if (evidence.Count == 100) evidence.Dequeue();
+            evidence.Enqueue(LogRedactor.Redact(line));
+        }
+    }
+
+    internal async Task<string[]> ReadEvidenceAsync()
+    {
+        // Descendants can inherit pipe handles; EOF must never block supervision.
+        await Task.WhenAny(Task.WhenAll(_outputDrain, _errorDrain), Task.Delay(2000)).ConfigureAwait(false);
+        lock (_gate) return [.. _evidence, .. _errorEvidence];
     }
 
     /// <summary>
@@ -120,9 +169,11 @@ public sealed class MinecraftProcessSession : IAsyncDisposable
         lock (_gate)
         {
             if (_snapshot.State is not (MinecraftProcessState.Created or MinecraftProcessState.Running)) return;
+            MinecraftProcessSnapshot before = _snapshot;
+            _snapshot = before with { State = MinecraftProcessState.Cancelled, EndedAt = DateTimeOffset.UtcNow };
             try { if (!_process.HasExited) _process.Kill(entireProcessTree: true); }
             catch (InvalidOperationException) { }
-            _snapshot = _snapshot with { State = MinecraftProcessState.Cancelled, EndedAt = DateTimeOffset.UtcNow };
+            catch { _snapshot = before; throw; }
             changed = _snapshot;
         }
         if (changed is { } snapshot) Changed?.Invoke(snapshot);
@@ -130,6 +181,7 @@ public sealed class MinecraftProcessSession : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
         _process.Exited -= OnExited;
         bool hasExited = false;
         try { hasExited = _process.HasExited; } catch (InvalidOperationException) { }
@@ -141,6 +193,9 @@ public sealed class MinecraftProcessSession : IAsyncDisposable
             _ = await Task.WhenAny(exited, Task.Delay(3_000)).ConfigureAwait(false);
         }
 
+        _drainLifetime.Cancel();
+        await Task.WhenAll(_outputDrain, _errorDrain).ConfigureAwait(false);
+        _drainLifetime.Dispose();
         _process.Dispose();
     }
 
@@ -176,6 +231,7 @@ public sealed class MinecraftProcessService : IAsyncDisposable
     private readonly XsrStateStore? _store;
     private readonly XsrStateId _sessionsId;
     private readonly ConcurrentDictionary<Guid, MinecraftProcessSession> _sessions = new();
+    private readonly ConcurrentDictionary<Guid, Lazy<Task>> _analyses = new();
 
     public MinecraftProcessService(IMinecraftProcessPort? port = null, XsrStateStore? hostStore = null, LogService? log = null)
     {
@@ -208,7 +264,7 @@ public sealed class MinecraftProcessService : IAsyncDisposable
             // Publish the Created observation even if the child exited between Process.Start and
             // event subscription; the terminal snapshot follows immediately in that case.
             Publish(session.CreatedSnapshot);
-            if (session.Snapshot.State != MinecraftProcessState.Created) Publish(session.Snapshot);
+            if (session.Snapshot.State != MinecraftProcessState.Created) OnSessionChanged(session.Snapshot);
             session.StartLifecycle();
             PruneSessions();
             operation?.Complete($"session={sessionId} pid={process.Id} state={session.Snapshot.State}");
@@ -262,8 +318,32 @@ public sealed class MinecraftProcessService : IAsyncDisposable
     private void OnSessionChanged(MinecraftProcessSnapshot snapshot)
     {
         Publish(snapshot);
+        if (snapshot.State == MinecraftProcessState.Failed && _sessions.TryGetValue(snapshot.SessionId, out var session))
+            _ = _analyses.GetOrAdd(snapshot.SessionId, _ => new Lazy<Task>(() => Task.Run(() => AnalyzeExitAsync(session)))).Value;
         if (snapshot.State is not (MinecraftProcessState.Created or MinecraftProcessState.Running))
             PruneSessions();
+    }
+
+    private async Task AnalyzeExitAsync(MinecraftProcessSession session)
+    {
+        try
+        {
+            string[] evidence = await session.ReadEvidenceAsync().ConfigureAwait(false);
+            var snapshot = session.Snapshot;
+            if (snapshot.State != MinecraftProcessState.Failed || _store is null) return;
+            var report = MinecraftLaunchFaultAnalyzer.AnalyzeText(
+                evidence.Length == 0 ? [$"Minecraft exited with code {snapshot.ExitCode}."] : evidence);
+            var id = _store.Resolve(MinecraftProcessStateComposition.FailuresKey);
+            for (int attempt = 0; attempt < 8; attempt++)
+            {
+                var current = _store.ReadCollection<MinecraftProcessFailure>(id);
+                Guid[] removals = current.Items.Take(Math.Max(0, current.Items.Count - RetainedExitedSessions + 1)).Select(item => item.SessionId).ToArray();
+                if (_store.PublishDelta(id, new XsrCollectionDelta<MinecraftProcessFailure, Guid>(current.Revision,
+                    [new(snapshot.SessionId, snapshot.InstanceId, report)], removals)).IsApplied) break;
+            }
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException and not AccessViolationException)
+        { _log?.Warn("Process", $"Crash analysis failed: {ex.Message}"); }
     }
 
     private void Publish(MinecraftProcessSnapshot snapshot)
@@ -319,6 +399,7 @@ public sealed class MinecraftProcessService : IAsyncDisposable
                     _log?.Debug("Process", $"Pruning completed session={snapshot.SessionId} stale={stale} over_retention={overRetention}");
                     removed.Changed -= OnSessionChanged;
                     RemovePublished(snapshot.SessionId);
+                    _analyses.TryRemove(snapshot.SessionId, out _);
                     removed.DisposeAsync().AsTask().GetAwaiter().GetResult();
                 }
             }
@@ -347,6 +428,8 @@ public sealed class MinecraftProcessService : IAsyncDisposable
             await session.DisposeAsync().ConfigureAwait(false);
         }
 
+        await Task.WhenAll(_analyses.Values.Where(item => item.IsValueCreated).Select(item => item.Value)).ConfigureAwait(false);
+        _analyses.Clear();
         _sessions.Clear();
     }
 }
