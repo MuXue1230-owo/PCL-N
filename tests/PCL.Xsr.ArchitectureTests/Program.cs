@@ -135,6 +135,10 @@ internal static class Program
         {
             if (IsBuildOutput(path)) continue;
             string source = File.ReadAllText(path);
+            if (Path.GetFileName(path).StartsWith("LaunchPageController", StringComparison.Ordinal))
+                foreach (string forbidden in new[] { "MinecraftLaunchFaultAnalyzer", "System.Diagnostics.Process", "Process.GetProcessById" })
+                    if (source.Contains(forbidden, StringComparison.Ordinal))
+                        failures.Add($"Desktop launch UI must consume Service process state, not {forbidden}: {Path.GetRelativePath(repositoryRoot, path)}");
             foreach (string forbidden in new[] { "InstallCompatibility", "InstallCatalogService.StateKey" })
                 if (source.Contains(forbidden, StringComparison.Ordinal))
                     failures.Add($"Desktop must project the sealed install contract, not {forbidden}: {Path.GetRelativePath(repositoryRoot, path)}");

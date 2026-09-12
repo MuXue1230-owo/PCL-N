@@ -29,6 +29,7 @@ internal static class LaunchPageState
     public static readonly XsrSemanticId InstanceAvailableKey = XsrSemanticId.Parse("launch.instance.available");
     public static readonly XsrSemanticId SelectedInstanceKey = XsrSemanticId.Parse("launch.selected.instance");
     public static readonly XsrSemanticId ActionLabelKey = XsrSemanticId.Parse("launch.action.label");
+    public static readonly XsrSemanticId ActionBusyKey = XsrSemanticId.Parse("launch.action.busy");
     public static readonly XsrSemanticId ActionEnabledKey = XsrSemanticId.Parse("launch.action.enabled");
     public static readonly XsrSemanticId WidgetAboutLabelKey = XsrSemanticId.Parse("launch.widget.about-label");
     public static readonly XsrSemanticId WidgetTriviaLabelKey = XsrSemanticId.Parse("launch.widget.trivia-label");
@@ -74,6 +75,7 @@ internal static class LaunchPageState
         builder.Cell<string>(SelectedInstanceKey, OwnerName);
         builder.Cell<string>(ActionLabelKey, OwnerName);
         builder.Cell<bool>(ActionEnabledKey, OwnerName);
+        builder.Cell<bool>(ActionBusyKey, OwnerName);
         builder.Cell<string>(WidgetAboutLabelKey, OwnerName);
         builder.Cell<string>(WidgetTriviaLabelKey, OwnerName);
         builder.Cell<string>(WidgetEchoLabelKey, OwnerName);

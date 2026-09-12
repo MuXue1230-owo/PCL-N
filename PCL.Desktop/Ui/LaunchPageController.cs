@@ -150,9 +150,9 @@ internal sealed partial class LaunchPageController : IDisposable
     };
 
     private int _launchInProgress;
+    private string? _launchingInstanceId, _launchingRoot;
     private int _pendingCloseLaunching;
     private Guid? _javaAcquisitionDialog;
-    private readonly Func<Task<string?>>? _pickJava;
     private int _pickingJava;
     private bool _launchingViaKeyboard;
     private XsrUiEntityId _launchingPage;
@@ -228,7 +228,6 @@ internal sealed partial class LaunchPageController : IDisposable
         XsrCommandRouter? accountCommands = null,
         TimeProvider? timeProvider = null,
         IVersionDirectoryEffects? directoryEffects = null,
-        Func<Task<string?>>? pickJava = null,
         XsrCommandRouter? installCatalogCommands = null, XsrQueryRouter? installCatalogQueries = null,
         XsrCommandRouter? installRunCommands = null)
     {
@@ -244,7 +243,6 @@ internal sealed partial class LaunchPageController : IDisposable
         _foundationCommands = foundationCommands;
         _accountCommands = accountCommands;
         _timeProvider = timeProvider ?? TimeProvider.System;
-        _pickJava = pickJava;
         _installCatalogCommands = installCatalogCommands;
         _installCatalogQueries = installCatalogQueries;
         _installRunCommands = installRunCommands;
@@ -338,6 +336,9 @@ internal sealed partial class LaunchPageController : IDisposable
 
         _lifetimeCancellation.Cancel();
         Versions.Dispose();
+        foreach (var dock in _processDocks.Values) { _shell.Tree.Destroy(dock.Power); _shell.Tree.Destroy(dock.Logs); }
+        _processDocks.Clear();
+        if (_javaChoicePage.IsAssigned) _shell.Tree.Destroy(_javaChoicePage);
         DismissAcquisitionDialog();
 
         _lifetimeCancellation.Dispose();
@@ -404,6 +405,10 @@ internal sealed partial class LaunchPageController : IDisposable
             enabled = true;
         }
 
+        bool busy = _launchInProgress != 0 && _launchingInstanceId == ReadCell(LaunchPageState.SelectedInstanceKey)
+            && MinecraftLibraryService.PathComparer.Equals(_launchingRoot, ReadCell(LaunchPageState.InstanceDirectoryKey));
+        if (busy) { label = "正在启动…"; enabled = false; }
+        Publish(LaunchPageState.ActionBusyKey, busy);
         Publish(LaunchPageState.ActionLabelKey, label);
         Publish(LaunchPageState.ActionEnabledKey, enabled);
         Publish(LaunchPageState.InstanceAvailableKey, hasInstance);
@@ -423,6 +428,7 @@ internal sealed partial class LaunchPageController : IDisposable
             return;
         }
 
+        if (HandleProcessIntent(e)) return;
         if (HandleInstallCatalogIntent(e)) return;
         XsrSemanticId command = e.Intent.Command;
         if (command == LaunchRoute)
@@ -1350,6 +1356,7 @@ internal sealed partial class LaunchPageController : IDisposable
             _observedPage = currentPage;
             UpdateTitleBar();
         }
+        ProjectProcessFeedback();
         Publish(LaunchPageState.LaunchingVisibleKey, _launchInProgress != 0 && currentPage != _launchingPage);
         ProjectLibrary();
         RefreshJavaInstallPresentation();
@@ -1627,6 +1634,9 @@ internal sealed partial class LaunchPageController : IDisposable
             return;
         }
 
+        if (_launchInProgress != 0) return;
+        _launchingInstanceId = instanceId;
+        _launchingRoot = ReadCell(LaunchPageState.InstanceDirectoryKey);
         ShowLaunchingPage(source);
 
         // The launching page replicates the legacy launching card: reset facts, narrate the
@@ -1742,7 +1752,10 @@ internal sealed partial class LaunchPageController : IDisposable
     private void CloseLaunchingPage()
     {
         Interlocked.Exchange(ref _launchInProgress, 0);
+        UpdateLaunchButton();
         DismissAcquisitionDialog();
+        if (_javaChoicePage.IsAssigned && _shell.Stage.Navigation.Current == _javaChoicePage)
+        { _shell.Stage.Navigation.Pop(); _returnFocus.TryPop(out _); }
         if (_shell.Stage.Navigation.Current != _launchingPage)
         {
             return;
@@ -1806,7 +1819,7 @@ internal sealed partial class LaunchPageController : IDisposable
                 "自动下载",
                 "取消",
                 approve => _ = DecideAcquisitionAsync(approve),
-                "选择 Java", () => _ = SelectJavaFileAsync());
+                "选择 Java 版本", ShowJavaVersionChoice);
         }
         else if (!pending && _javaAcquisitionDialog is { } dialog)
         {
@@ -1824,24 +1837,6 @@ internal sealed partial class LaunchPageController : IDisposable
 
         _feedback.DismissDialog(dialog);
         _javaAcquisitionDialog = null;
-    }
-
-    private async Task SelectJavaFileAsync()
-    {
-        if (_pickJava is null || Interlocked.Exchange(ref _pickingJava, 1) != 0) return;
-        Guid? dialog = _javaAcquisitionDialog;
-        try
-        {
-            string? path = await _pickJava().ConfigureAwait(false);
-            if (_disposed || path is null || dialog != _javaAcquisitionDialog || _launchInProgress == 0) return;
-            if (!_minecraft.Commands.TryResolve(MinecraftRouteIds.JavaSelect, out XsrCommandId route)) return;
-            XsrResult result = await _minecraft.Commands.Dispatch(route, new MinecraftSelectJavaCommand(path),
-                cancellationToken: _lifetimeCancellation.Token).Completion.ConfigureAwait(false);
-            if (!_disposed && !result.IsSuccess) _feedback.Error(result.Error?.Message ?? "无法使用所选 Java。");
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException and not AccessViolationException)
-        { if (!_disposed) _feedback.Error("无法选择 Java，请重试。"); }
-        finally { Interlocked.Exchange(ref _pickingJava, 0); }
     }
 
     private string ReadServiceCell(XsrSemanticId key) =>

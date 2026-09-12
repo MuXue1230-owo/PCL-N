@@ -61,8 +61,10 @@
             </StackPanel>
           </StackPanel>
           <Button Key="LaunchButton" Label="{state launch.action.label}"
-                  Content="{state launch.action.label}" Command="ui.launch.primary" Height="44"
-                  Clickable="{state launch.action.enabled}" />
+                  Command="ui.launch.primary" Height="44" Clickable="{state launch.action.enabled}">
+            <Progress Key="LaunchButtonProgress" Value="{state minecraft.launch.progress}" IsVisible="{state launch.action.busy}" />
+            <Text Key="LaunchButtonText" Content="{state launch.action.label}" VerticalAlignment="Center" HorizontalAlignment="Center" />
+          </Button>
         </StackPanel>
       </StackPanel>
 

@@ -175,7 +175,7 @@ internal static partial class Program
         using LaunchPageFixture fixture = new(new ImmediateInstanceSource([Instance("playable")]));
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(850, 500));
         XsrUiSceneNode button = FindByKey(fixture.Shell, scene, "LaunchButton");
-        AssertEqual("未选择档案", button.Text);
+        AssertEqual("未选择档案", FindByKey(fixture.Shell, scene, "LaunchButtonText").Text);
         AssertFalse(button.IsEnabled);
         AssertFalse(button.IsClickable);
         AssertFalse(fixture.Shell.Renderer.Activate(button.Entity));
@@ -183,7 +183,7 @@ internal static partial class Program
         AssertFalse(fixture.Shell.Renderer.PointerPressed(new XsrUiPoint(button.Rect.X + 8, button.Rect.Y + 8)));
         AssertTrue(fixture.Service.AddProfile(new LaunchProfile { Username = "Now ready" }).IsSuccess);
         scene = fixture.Shell.Render(new XsrUiSize(850, 500));
-        AssertEqual("启动游戏", FindByKey(fixture.Shell, scene, "LaunchButton").Text);
+        AssertEqual("启动游戏", FindByKey(fixture.Shell, scene, "LaunchButtonText").Text);
         AssertTrue(FindByKey(fixture.Shell, scene, "LaunchButton").IsEnabled);
     }
 

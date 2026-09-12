@@ -36,6 +36,9 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("version row actions keep selection distinct", VersionRowActionsKeepSelectionDistinct),
+        ("Java choice page routes selected major and launch action tracks progress", JavaChoiceAndLaunchProgressStayInteractive),
+        ("process controls address sessions and show Service crash reports", ProcessControlsProjectServiceFacts),
         ("install catalog checks bridge selection and cleanup", InstallCatalogChecksBridgeSelection),
         ("install catalog returns to selected game and loader", InstallCatalogReturnsToSelectedGameAndLoader),
         ("install catalog virtualizes and prefetches off UI thread", InstallCatalogVirtualizesAndPrefetchesOffUiThread),
@@ -113,7 +116,7 @@ internal static partial class Program
         fixture.Controller.WaitUntilIdle().GetAwaiter().GetResult();
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
 
-        AssertEqual("下载游戏", FindByKey(fixture.Shell, scene, "LaunchButton").Text);
+        AssertEqual("下载游戏", FindByKey(fixture.Shell, scene, "LaunchButtonText").Text);
         AssertTrue(FindByKey(fixture.Shell, scene, "LaunchButton").IsClickable);
         AssertEqual("账户", FindByKey(fixture.Shell, scene, "AccountHeader").Text);
         AssertFalse(HasKey(fixture.Shell, scene, "AccountBadgeText"));
@@ -353,7 +356,7 @@ internal static partial class Program
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
         XsrUiSceneNode button = FindByKey(fixture.Shell, scene, "LaunchButton");
 
-        AssertEqual("下载游戏", button.Text);
+        AssertEqual("下载游戏", FindByKey(fixture.Shell, scene, "LaunchButtonText").Text);
         AssertEqual("下载游戏", button.Label);
         AssertEqual("选择版本", FindByKey(fixture.Shell, scene, "InstanceListButton").Label);
         AssertFalse(scene.Nodes.Any(node => node.Label is "LaunchButton" or "InstanceListButton" or "VersionName" or "CardAccount"));
@@ -372,7 +375,7 @@ internal static partial class Program
         AssertEqual("worker-result", ReadCell(fixture.Store, LaunchPageState.SelectedInstanceKey));
 
         XsrUiScene scene = fixture.Shell.Render(new XsrUiSize(1280, 800));
-        AssertEqual("启动游戏", FindByKey(fixture.Shell, scene, "LaunchButton").Text);
+        AssertEqual("启动游戏", FindByKey(fixture.Shell, scene, "LaunchButtonText").Text);
         AssertEqual("启动游戏", FindByKey(fixture.Shell, scene, "LaunchButton").Label);
     }
 
@@ -484,6 +487,10 @@ internal static partial class Program
             recording.LastDecision = command.Approve;
             return ValueTask.FromResult(XsrResult.Success());
         });
+        commands.Register<MinecraftSelectJavaVersionCommand>(MinecraftRouteIds.JavaVersionSelect, (command, _) =>
+        { recording.LastJavaMajor = command.Major; return ValueTask.FromResult(XsrResult.Success()); });
+        commands.Register<MinecraftCancelProcessCommand>(MinecraftRouteIds.ProcessCancel, (command, _) =>
+        { recording.LastCancelledSession = command.SessionId; return ValueTask.FromResult(XsrResult.Success()); });
         XsrQueryRouterBuilder queries = new();
         return new MinecraftRuntime(
             new MinecraftVersionDiscovery(),
@@ -680,12 +687,24 @@ internal static partial class Program
         AssertEqual(XsrUiProgressFillAnchor.Leading, fill.Anchor);
         AssertTrue(Math.Abs(fill.Target - 0.5) < 0.0001);
         AssertFalse(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(node => node.Entity == bubble.FillEntity));
-        fixture.Shell.Tree.GetComponent<XsrUiInput>(bubble.Root)!.IsHovered = true;
+        var dock = FindByKey(fixture.Shell, fixture.Shell.Render(new(1280, 800)), "task-bubble");
+        fixture.Shell.Renderer.PointerMoved(new(dock.Rect.X + 24, dock.Rect.Y + 24));
         AssertTrue(fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Any(node => node.Entity == bubble.FillEntity));
         fixture.Shell.Renderer.SetProgressPresentation(bubble.FillEntity, 0.5);
         var presented = fixture.Shell.Render(new XsrUiSize(1280, 800)).Nodes.Single(node => node.Entity == bubble.FillEntity);
         AssertEqual(16d, presented.Rect.Width);
         AssertEqual(3d, presented.Rect.Height);
+        // The expanded caption and the bottom icon share one continuous input owner.
+        var expanded = FindByKey(fixture.Shell, fixture.Shell.Render(new(1280, 800)), "task-bubble");
+        var top = new XsrUiPoint(expanded.Rect.X + 24, expanded.Rect.Y + 12);
+        fixture.Shell.Renderer.PointerMoved(top);
+        AssertEqual(116d, FindByKey(fixture.Shell, fixture.Shell.Render(new(1280, 800)), "task-bubble").Rect.Height);
+        string? emitted = null;
+        fixture.Intents.IntentEmitted += (_, e) => emitted = e.Intent.Command.Value;
+        AssertTrue(fixture.Shell.Renderer.PointerPressed(top));
+        AssertTrue(fixture.Shell.Renderer.PointerReleased(top));
+        AssertEqual("ui.tasks.open", emitted);
+
 
         // The presented fill is the renderer-owned catch-up value; with the animation clock
         // parked it must still be clamped between zero and the target.
@@ -956,6 +975,8 @@ internal static partial class Program
         public bool Hang { get; set; }
 
         public bool? LastDecision { get; set; }
+        public int? LastJavaMajor { get; set; }
+        public Guid? LastCancelledSession { get; set; }
 
         public XsrStateStore? ProgressStore { get; set; }
 

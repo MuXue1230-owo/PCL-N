@@ -55,6 +55,8 @@ internal sealed class VersionSelectionController : IDisposable
     private int _pendingCloseChooser;
     private long _pendingEpoch;
     private long _viewEpoch;
+    private string? _pendingVersionPage;
+    private readonly Dictionary<XsrUiEntityId, (string Root, string Id)> _actions = [];
     private Task _pending = Task.CompletedTask;
 
     public VersionSelectionController(XsrUiShell shell, DesktopUiIntentSink intents, XsrCommandRouter commands,
@@ -88,6 +90,20 @@ internal sealed class VersionSelectionController : IDisposable
     {
         if (_disposed || _shell.Stage.Navigation.Current != Page) return;
         string command = e.Intent.Command.Value;
+        if (command is "ui.versions.modify" or "ui.versions.settings" or "ui.versions.delete"
+            && _actions.TryGetValue(e.Intent.Source, out var target))
+        {
+            if (command == "ui.versions.delete")
+                _feedback.ShowDialog("version.delete." + target.Id, "删除 " + target.Id + "？",
+                    "版本将移入游戏目录的 .recycle 文件夹，可手动恢复。共享资源不会移除。", "删除", "取消",
+                    confirmed => { if (confirmed) _pending = Dispatch(MinecraftLibraryRoutes.Delete, new MinecraftLibraryDeleteCommand(target.Root, target.Id)); });
+            else
+            {
+                _pendingVersionPage = command == "ui.versions.modify" ? "ui.launch.modify" : "ui.launch.settings";
+                _pending = Dispatch(MinecraftLibraryRoutes.Select, new MinecraftLibrarySelectCommand(target.Root, target.Id), returnHome: true);
+            }
+            return;
+        }
         if (command == "ui.page.back" || command.StartsWith("ui.navigation.", StringComparison.Ordinal))
         { Interlocked.Increment(ref _viewEpoch); CloseDropdown(false); return; }
         if (command == "ui.versions.directories")
@@ -104,9 +120,12 @@ internal sealed class VersionSelectionController : IDisposable
         }
         else if (command == "ui.versions.refresh") _pending = Dispatch(MinecraftLibraryRoutes.Refresh, new MinecraftLibraryRefreshCommand());
         else if (command == "ui.versions.select" && _versions.TryGetValue(e.Intent.Source, out var version))
-            // Selecting a version immediately returns to the launch page; the entry button
-            // regains focus so the next launch is one keystroke away.
+        // Selecting a version immediately returns to the launch page; the entry button
+        // regains focus so the next launch is one keystroke away.
+        {
+            _pendingVersionPage = null;
             _pending = Dispatch(MinecraftLibraryRoutes.Select, new MinecraftLibrarySelectCommand(version.Root, version.Id), returnHome: true);
+        }
         else if (command == "ui.versions.directory" && _directories.TryGetValue(e.Intent.Source, out string? root))
             _pending = Dispatch(MinecraftLibraryRoutes.Directory, new MinecraftLibraryDirectoryCommand(root), closeChooser: true);
         else if (command == "ui.versions.forget" && _forget.TryGetValue(e.Intent.Source, out string? forgotten))
@@ -149,9 +168,14 @@ internal sealed class VersionSelectionController : IDisposable
         if (!_commands.TryResolve(route, out XsrCommandId id)) { _feedback.Error("版本目录服务尚未就绪。"); return; }
         XsrResult result = await _commands.Dispatch(id, command, cancellationToken: _lifetime.Token).Completion.ConfigureAwait(false);
         if (_disposed) return;
-        if (!result.IsSuccess && result.Error?.Code != XsrRuntimeErrors.Cancelled().Code)
-            _feedback.Error(result.Error?.Code == MinecraftErrors.InvalidRequestCode
-                ? "无法读取此游戏目录，请检查完整路径和访问权限。" : "未能保存版本选择，请检查设置目录是否可写。");
+        if (!result.IsSuccess)
+        {
+            _pendingVersionPage = null;
+            if (result.Error?.Code != XsrRuntimeErrors.Cancelled().Code)
+                _feedback.Error(route == MinecraftLibraryRoutes.Delete ? result.Error?.Message ?? "无法删除此版本。"
+                    : result.Error?.Code == MinecraftErrors.InvalidRequestCode
+                    ? "无法读取此游戏目录，请检查完整路径和访问权限。" : "未能保存版本选择，请检查设置目录是否可写。");
+        }
         if (result.IsSuccess && (closeChooser || returnHome) && epoch == Interlocked.Read(ref _viewEpoch))
         {
             Interlocked.Exchange(ref _pendingEpoch, epoch);
@@ -171,7 +195,13 @@ internal sealed class VersionSelectionController : IDisposable
         if (pending != 0 && Interlocked.Read(ref _pendingEpoch) == Interlocked.Read(ref _viewEpoch))
         {
             CloseDropdown();
-            if (pending == 2) { _intents.Emit(XsrSemanticId.Parse("ui.page.back"), Page, XsrCorrelationId.Create()); return; }
+            if (pending == 2)
+            {
+                _intents.Emit(XsrSemanticId.Parse("ui.page.back"), Page, XsrCorrelationId.Create());
+                if (_pendingVersionPage is { } destination)
+                { _pendingVersionPage = null; _intents.Emit(XsrSemanticId.Parse(destination), Page, XsrCorrelationId.Create()); }
+                return;
+            }
         }
         MinecraftLibrarySnapshot snapshot = Snapshot;
         if (_chooseDirectories)
@@ -246,12 +276,19 @@ internal sealed class VersionSelectionController : IDisposable
         {
             foreach (XsrUiEntityId entity in _versions.Keys) _shell.Tree.Destroy(entity);
             _versions.Clear();
+            _actions.Clear();
             foreach (MinecraftInstanceDescriptor instance in shown)
             {
                 XsrUiEntityId row = CreateRow(_entities["LibraryVersionRows"], "version:" + instance.Id, instance.Id,
                     VersionKindLabel(instance.Version.Kind) + (instance.Version.InheritsFrom is { Length: > 0 } parent ? " · " + parent : " · " + instance.VersionId),
                     false, VersionIcon(instance.Version.Kind));
                 _versions.Add(row, (snapshot.RootDirectory, instance.Id));
+                _shell.Tree.Walk(row, entity =>
+                {
+                    string key = _shell.Tree.Name(entity).Split(':')[0];
+                    if (key is "LibraryRowModify" or "LibraryRowSettings" or "LibraryRowDelete") _actions[entity] = (snapshot.RootDirectory, instance.Id);
+                    return true;
+                });
                 if (instance.Id == selectedFocus) _shell.Renderer.Focus(row, keyboard);
             }
         }
@@ -358,6 +395,8 @@ internal sealed class VersionSelectionController : IDisposable
         if (key is "LibraryRowSelected" or "LibraryRowCheck" or "LibraryFolderIcon" or "LibraryRowIcon") { style.Foreground = Blue; style.FontSize = 12; style.FontWeight = 600; }
         if (_shell.Tree.GetComponent<XsrUiInput>(entity) is not null)
         { style.Hover = new(237, 243, 253); if (key is not "LibraryRow" and not "LibraryChooseDirectory" and not "LibraryDirectoryRow") { style.Background = new(240, 244, 250); style.FontSize = 13; } }
+        if (key is "LibraryRowModify" or "LibraryRowSettings" or "LibraryRowDelete")
+        { style.CornerRadius = 16; style.Background = DesktopUiPalette.CapsuleBackground; style.Foreground = DesktopUiPalette.CapsuleForeground; style.TextAlignment = XsrUiTextAlignment.Center; }
         if (key == "LibraryAddPath") { style.Background = Blue; style.Foreground = new(255, 255, 255); style.Hover = new(23, 110, 225); }
         if (key == "LibraryDropdownDismiss") { style.Background = XsrUiColor.Transparent; style.Hover = XsrUiColor.Transparent; }
         if (key is "LibraryAddDirectory" or "LibraryRefresh") { style.HoverExpand = true; style.CornerRadius = key == "LibraryAddDirectory" ? 20 : 18; style.TextAlignment = XsrUiTextAlignment.Center; }

@@ -147,7 +147,7 @@ internal static partial class Program
         AssertTrue(FindByKey(fixture.Shell, scene, "DialogMessage").Text!
             .Contains("Java 17", StringComparison.Ordinal));
         AssertEqual("取消", FindByKey(fixture.Shell, scene, "DialogCancel").Text);
-        AssertEqual("选择 Java", FindByKey(fixture.Shell, scene, "DialogAlternate").Text);
+        AssertEqual("选择 Java 版本", FindByKey(fixture.Shell, scene, "DialogAlternate").Text);
         AssertEqual("自动下载", FindByKey(fixture.Shell, scene, "DialogAccept").Text);
         XsrUiRect cancel = FindByKey(fixture.Shell, scene, "DialogCancel").Rect;
         XsrUiRect select = FindByKey(fixture.Shell, scene, "DialogAlternate").Rect;

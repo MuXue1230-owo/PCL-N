@@ -83,8 +83,9 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
             borderWidth: 1,
             hover: new XsrUiColor(227, 237, 252)));
 
-        _details = CreateDock("task-bubble-details", 48, 116, 18, "ui.tasks.open", "任务数量和总进度");
-        shell.Tree.SetComponent(_details, new XsrUiOverlayMotion(XsrUiOverlayMotionKind.Dialog));
+        _details = shell.Tree.Create("task-bubble-details");
+        shell.Tree.Attach(_details, _root);
+        shell.Tree.SetComponent(_details, new XsrUiElement { IsVisible = false });
         _launch = CreateDock("launch-bubble", 48, 48, 18, "ui.launch.restore", "返回正在启动");
         shell.Tree.SetComponent(_launch, new XsrUiImage("lucide/play"));
         XsrUiEntityId track = shell.Tree.Create("task-bubble-track");
@@ -111,7 +112,8 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
             Width = 20,
             Height = 20,
             HorizontalAlignment = XsrUiAlignment.Center,
-            VerticalAlignment = XsrUiAlignment.Center,
+            VerticalAlignment = XsrUiAlignment.End,
+            Margin = new XsrUiThickness(0, 0, 0, 14),
         });
         shell.Tree.SetComponent(icon, new XsrUiImage("lucide/list-checks"));
 
@@ -208,16 +210,14 @@ internal sealed class DesktopTaskBubblePresenter : IDisposable
         double bottom = launching ? 76 : DockInset;
         SetDock(_root, IsVisible(_root), bottom);
         var rootInput = _shell.Tree.GetComponent<XsrUiInput>(_root)!;
-        var detailInput = _shell.Tree.GetComponent<XsrUiInput>(_details)!;
-        bool expanded = wanted && (rootInput.IsHovered || rootInput.IsFocused || detailInput.IsHovered || detailInput.IsFocused);
-        SetDock(_details, expanded, bottom);
-        var rootStyle = _shell.Tree.GetComponent<XsrUiVisualStyle>(_root)!;
-        var background = expanded ? XsrUiColor.Transparent : new XsrUiColor(248, 250, 254, 250);
-        if (rootStyle.Background != background)
+        bool expanded = wanted && (rootInput.IsHovered || rootInput.IsFocused);
+        var rootElement = _shell.Tree.GetComponent<XsrUiElement>(_root)!;
+        double height = expanded ? 116 : BubbleSize;
+        if (rootElement.Height != height)
         {
-            rootStyle.Background = background;
-            rootStyle.BorderWidth = expanded ? 0 : 1;
-            _shell.Tree.MarkDirty(_root, XsrUiDirtyKinds.Paint);
+            rootElement.Height = height;
+            _shell.Tree.GetComponent<XsrUiElement>(_details)!.IsVisible = expanded;
+            _shell.Tree.MarkDirty(_root, XsrUiDirtyKinds.Layout | XsrUiDirtyKinds.Paint);
         }
         if (wanted && _closing)
         {

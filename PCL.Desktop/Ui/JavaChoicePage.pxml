@@ -1,0 +1,11 @@
+<Page xmlns="https://pcln.dev/pxml/2026" Key="JavaChoicePage" Label="选择 Java 版本">
+  <StackPanel Orientation="Vertical" Margin="28" Spacing="12">
+    <Text Content="选择使用的 Java 版本" Height="30" />
+    <Text Content="优先使用本机已安装的版本，缺失时自动下载。" Height="24" />
+    <Button Key="JavaChoice8" Content="Java 8" Label="Java 8" Command="ui.java.major.8" Height="48" />
+    <Button Key="JavaChoice16" Content="Java 16" Label="Java 16" Command="ui.java.major.16" Height="48" />
+    <Button Key="JavaChoice17" Content="Java 17" Label="Java 17" Command="ui.java.major.17" Height="48" />
+    <Button Key="JavaChoice21" Content="Java 21" Label="Java 21" Command="ui.java.major.21" Height="48" />
+    <Button Key="JavaChoice25" Content="Java 25" Label="Java 25" Command="ui.java.major.25" Height="48" />
+  </StackPanel>
+</Page>

@@ -208,6 +208,18 @@ internal sealed class DesktopFeedbackService : IDisposable
         return ShowDialogCore(key, title, message, acceptLabel, cancelLabel: null, static _ => { });
     }
 
+    /// <summary>Queues analysis at the next idle modal slot without cancelling another decision.</summary>
+    public bool TryShowMessageDialog(string key, string title, string message, string acceptLabel)
+    {
+        lock (_gate)
+        {
+            if (_disposed || _dialog is not null) return false;
+            _dialog = new DesktopDialog(Guid.NewGuid(), key, title, message, acceptLabel, null, static _ => { });
+        }
+        RaiseChanged();
+        return true;
+    }
+
     private Guid ShowDialogCore(
         string key,
         string title,
