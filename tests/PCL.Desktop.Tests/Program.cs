@@ -83,6 +83,7 @@ internal static partial class Program
         ("unsupported profile does not spin feedback", UnsupportedProfileDoesNotSpinFeedback),
         ("launched cancel button becomes back", LaunchedCancelButtonBecomesBack),
         ("version subpages have independent routes and restore navigation focus", VersionSubpagesHaveIndependentRoutesAndRestoreFocus),
+        ("Install editor locks base version and resets on exit", InstallEditorLocksBaseVersionAndResetsOnExit),
         ("pointer focus does not draw keyboard focus rings", PointerFocusDoesNotDrawKeyboardFocusRings),
         ("capsules occupy their presented width and remain beside the version name", CapsulesOccupyPresentedWidth),
         ("launch widgets preserve original content and page through real intents", LaunchWidgetsPreserveOriginalContent),

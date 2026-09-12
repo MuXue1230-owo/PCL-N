@@ -181,7 +181,6 @@ internal sealed partial class LaunchPageController : IDisposable
     private readonly XsrUiEntityId _placeholderPage;
     private readonly XsrUiEntityId _versionListPage;
     private readonly XsrUiEntityId _versionSettingsPage;
-    private readonly XsrUiEntityId _versionModifyPage;
     private readonly XsrUiEntityId _wardrobePage;
     private readonly XsrUiEntityId _installPage;
     private readonly XsrUiEntityId _javaInstallPage;
@@ -255,7 +254,6 @@ internal sealed partial class LaunchPageController : IDisposable
         Versions = new VersionSelectionController(shell, intents, library.Commands, store, feedback, directoryEffects);
         _versionListPage = Versions.Page;
         _versionSettingsPage = LoadVersionSubpage("VersionSettingsPage", "版本设置");
-        _versionModifyPage = LoadVersionSubpage("VersionModifyPage", "版本修改");
         _wardrobePage = LoadVersionSubpage("AccountWardrobePage", "更衣橱");
         (_installPage, _) = LoadInstallPage();
         (_javaInstallPage, _javaInstallEntities) = LoadJavaInstallPage();
@@ -303,7 +301,7 @@ internal sealed partial class LaunchPageController : IDisposable
     {
         lock (_refreshGate)
         {
-            return Task.WhenAll(_refreshTask, _installCatalogTask, _installPrefetchTask);
+            return Task.WhenAll(_refreshTask, _installCatalogTask, _installPrefetchTask, _installEditRead ?? Task.CompletedTask);
         }
     }
 
@@ -545,7 +543,7 @@ internal sealed partial class LaunchPageController : IDisposable
         }
         else if (command == LaunchModifyCommand)
         {
-            OpenSubpage(_versionModifyPage, e.Intent.Source);
+            OpenInstallEditor(e.Intent.Source);
         }
         else if (command == AccountWardrobeCommand)
         {
@@ -710,6 +708,7 @@ internal sealed partial class LaunchPageController : IDisposable
 
     private void SelectInstallVersion(string version, string key)
     {
+        if (_editingInstall) return;
         _selectedInstallVersion = version;
         ChooseInstallGame(version);
         _ = _shell.Renderer.SetTextInputValue(_javaInstallEntities["JavaInstallVersionInput"], version);
@@ -759,6 +758,8 @@ internal sealed partial class LaunchPageController : IDisposable
 
     private void NotifyInstallUnavailable()
     {
+        if (_editingInstall && _editPlan?.Kind == MinecraftInstallEditKind.Unchanged) return;
+        if (_editingInstall && _installEdit is null) { _feedback.Warn("正在读取版本信息。"); return; }
         if (!_installGameChosen) { _feedback.Warn("请先选择 Minecraft 版本。"); return; }
         if (QueryInstallEligibility()?.CommitError is { } conflict) { _feedback.Warn(conflict); return; }
         string requested = _shell.Tree.GetComponent<XsrUiTextInput>(_javaInstallEntities["JavaInstallVersionInput"])
@@ -808,14 +809,14 @@ internal sealed partial class LaunchPageController : IDisposable
             }
         }
 
-        string root = ReadCell(LaunchPageState.InstanceDirectoryKey);
+        string root = _installEdit?.RootDirectory ?? ReadCell(LaunchPageState.InstanceDirectoryKey);
         if (string.IsNullOrWhiteSpace(root)) { _feedback.Warn("尚未确定 Minecraft 目录。"); return false; }
         _ = _installRunCommands.Dispatch(route, new MinecraftInstallCommand(
             root,
             _selectedInstallVersion,
             primary?.Kind,
             primary?.Build,
-            addons, version == _selectedInstallVersion ? null : version));
+            addons, _installEdit?.InstanceId ?? (version == _selectedInstallVersion ? null : version), _installEdit?.Fingerprint));
         // Manual starts watch their task immediately (parity with the legacy task manager).
         _intents.Emit(XsrSemanticId.Parse("ui.tasks.open"), default, XsrCorrelationId.Create());
         return true;
@@ -1356,11 +1357,13 @@ internal sealed partial class LaunchPageController : IDisposable
             _observedPage = currentPage;
             UpdateTitleBar();
         }
+        ProjectInstallEditor();
         ProjectProcessFeedback();
         Publish(LaunchPageState.LaunchingVisibleKey, _launchInProgress != 0 && currentPage != _launchingPage);
         ProjectLibrary();
         RefreshJavaInstallPresentation();
         ProjectInstallCatalog();
+        ProjectInstallEditPlan();
         if (Interlocked.Exchange(ref _pendingCloseLaunching, 0) == 1)
         {
             CloseLaunchingPage();

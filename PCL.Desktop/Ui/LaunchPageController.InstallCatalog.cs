@@ -21,6 +21,10 @@ internal sealed partial class LaunchPageController
     private static InstallLoader? ParseInstallLoader(string? value) => Enum.TryParse(value?.Replace(" ", "", StringComparison.Ordinal), out InstallLoader loader) ? loader : null;
     private void ResetInstallSelection()
     {
+        _editingInstall = false;
+        _installEdit = null;
+        _installEditRead = null;
+        SetInstallEditorLabels(false);
         _installGameChosen = false;
         _selectedInstallVersion = "";
         _selectedInstallBuilds.Clear();
@@ -35,6 +39,7 @@ internal sealed partial class LaunchPageController
     }
     private void ChooseInstallGame(string version)
     {
+        if (_editingInstall) return;
         _installGameChosen = true;
         _selectedInstallVersion = version;
         _selectedInstallBuilds.Clear();
@@ -153,6 +158,7 @@ internal sealed partial class LaunchPageController
         if (e.Intent.Command != CatalogSelect || !_catalogRows.TryGetValue(e.Intent.Source, out InstallCatalogVersion? version)) return false;
         if (ActiveCatalogLoader is null)
         {
+            if (_editingInstall) return true;
             if (_installGameChosen && _selectedInstallVersion == version.Id)
             {
                 _installGameChosen = false;
@@ -191,7 +197,7 @@ internal sealed partial class LaunchPageController
         if (_installCatalogQueries is null || !_installCatalogQueries.TryResolve(InstallEligibilityContract.Query, out XsrQueryId id)) return null;
         var query = new InstallEligibilityQuery(_installGameChosen ? _selectedInstallVersion : "",
             Array.AsReadOnly(_selectedInstallBuilds.Select(pair => new InstallBuildSelection(pair.Key, pair.Value)).ToArray()),
-            ParseInstallLoader(_selectedInstallLoader), catalog, candidates, toggle);
+            ParseInstallLoader(_selectedInstallLoader), catalog, candidates, toggle, _installEdit?.Selection);
         var result = _installCatalogQueries.QueryAsync<InstallEligibilityQuery, InstallEligibilityResult>(id, query);
         // This route is a bounded in-memory projection. Never synchronously wait for an incomplete query.
         if (!result.IsCompletedSuccessfully) return null;
@@ -220,7 +226,9 @@ internal sealed partial class LaunchPageController
             }
         }
         string cacheKey = CurrentCatalogKey;
-        InstallCatalogSnapshot? snapshot = _catalogCache.GetValueOrDefault(cacheKey);
+        InstallCatalogSnapshot? snapshot = _installEdit is { } edit && ActiveCatalogLoader is null
+            ? new InstallCatalogSnapshot(1, "", null, [new(edit.GameVersion, "不可更改")], false)
+            : _catalogCache.GetValueOrDefault(cacheKey);
         if (snapshot is null)
         {
             snapshot = (_store.ReadAppliedValue(_store.Resolve(InstallCatalogStateContract.StateKey)) as InstallCatalogState)?.Catalogs
@@ -233,6 +241,10 @@ internal sealed partial class LaunchPageController
                 _catalogCache[cacheKey] = snapshot;
             }
         }
+        if (_installEdit is not null && snapshot.Loader is { } selectedLoader
+            && _selectedInstallBuilds.TryGetValue(selectedLoader, out string? selectedBuild)
+            && !snapshot.Versions.Any(version => version.Id == selectedBuild))
+            snapshot = snapshot with { Versions = new[] { new InstallCatalogVersion(selectedBuild, "已安装") }.Concat(snapshot.Versions).ToArray() };
         if (!_catalogHosts.TryGetValue(_activeJavaInstallPage, out XsrUiEntityId host)) return;
         XsrUiScroll scroll = _shell.Tree.GetComponent<XsrUiScroll>(_javaInstallEntities[_activeJavaInstallPage])!;
         string query = !_installGameChosen && snapshot.Loader is null ? input.ReadDraft().Trim() : "";
@@ -300,7 +312,7 @@ internal sealed partial class LaunchPageController
             string key = snapshot.Loader is null ? "game:" + version.Id : "loader:" + version.Id;
             bool selected = _installGameChosen && (snapshot.Loader is null ? version.Id == _selectedInstallVersion : _selectedInstallBuilds.GetValueOrDefault(snapshot.Loader.Value) == version.Id);
             string? conflict = snapshot.Loader is { } kind ? eligibility?.Builds.GetValueOrDefault(version.Id)?.Conflict : null;
-            string detail = conflict ?? (snapshot.Loader is not null ? version.Detail : version.Stable ? "正式版" : "测试版");
+            string detail = _editingInstall && snapshot.Loader is null ? "不可更改" : conflict ?? (snapshot.Loader is not null ? version.Detail : version.Stable ? "正式版" : "测试版");
             PxmlIrNode Project(PxmlIrNode node) => node with
             {
                 Key = node.Key + ":" + key,
@@ -315,8 +327,9 @@ internal sealed partial class LaunchPageController
                 row = PxmlUiLoader.Load(new(Project(CatalogRowTemplate.Root)), _shell.Tree, _store, host);
                 _shell.Tree.GetComponent<XsrUiElement>(row)!.Margin = new XsrUiThickness(0, 0, 0, 2);
             }
-            _shell.Tree.GetComponent<XsrUiSemantic>(row)!.Label = (selected ? "取消选择 " : "选择 ") + version.Id;
-            _shell.Tree.GetComponent<XsrUiInput>(row)!.Enabled = selected || conflict is null;
+            _shell.Tree.GetComponent<XsrUiSemantic>(row)!.Label = _editingInstall && snapshot.Loader is null
+                ? "Minecraft " + version.Id + "，不可更改" : (selected ? "取消选择 " : "选择 ") + version.Id;
+            _shell.Tree.GetComponent<XsrUiInput>(row)!.Enabled = !(_editingInstall && snapshot.Loader is null) && (selected || conflict is null);
             _catalogRows[row] = version;
             _shell.Tree.SetComponent(row, new XsrUiSelection { IsSelected = selected });
             ApplyVisual(row, selected ? ProfileSurface : XsrUiColor.Transparent, PrimaryText, XsrUiCornerRadii.Inset, hover: PickerBackground);

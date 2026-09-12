@@ -195,7 +195,7 @@ internal static partial class Program
         {
             ("InstanceListButton", "VersionListPage", "选择版本"),
             ("InstanceSettings", "VersionSettingsPage", "版本设置"),
-            ("InstanceModify", "VersionModifyPage", "版本修改"),
+            ("InstanceModify", "JavaInstallPage", "修改版本"),
         })
         {
             XsrUiScene home = fixture.Shell.Render(size);
@@ -223,7 +223,7 @@ internal static partial class Program
         scene = fixture.Shell.Render(size);
         Emit(fixture.Intents, "ui.launch.modify");
         scene = fixture.Shell.Render(size);
-        AssertTrue(HasKey(fixture.Shell, scene, "VersionModifyPage"));
+        AssertTrue(HasKey(fixture.Shell, scene, "JavaInstallPage"));
         AssertFalse(HasKey(fixture.Shell, scene, "VersionSettingsPage"));
         AssertEqual(3, fixture.Shell.Stage.Navigation.Depth);
         AssertTrue(fixture.Shell.Renderer.Activate(FindByKey(fixture.Shell, scene, "TitleBack").Entity));
@@ -236,7 +236,7 @@ internal static partial class Program
         Emit(fixture.Intents, "ui.launch.modify");
         Emit(fixture.Intents, "ui.navigation.settings");
         AssertEqual(1, fixture.Shell.Stage.Navigation.Depth);
-        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(size), "VersionModifyPage"));
+        AssertFalse(HasKey(fixture.Shell, fixture.Shell.Render(size), "JavaInstallPage"));
     }
 
     private static void PointerFocusDoesNotDrawKeyboardFocusRings()
