@@ -17,7 +17,8 @@ internal static partial class Program
         {
             var installer = new RecordingStubInstaller();
             var candidates = installed ? await ComposeWorkingJavaLocator().FindAllAsync() : [];
-            var (coordinator, host, _, root) = ComposeAcquisitionCoordinator(installer,
+            var port = new LongLivedProcessPort();
+            var (coordinator, host, _, root) = ComposeAcquisitionCoordinator(installer, processPort: port,
                 javaLocator: new AppearingJavaLocator(candidates));
             try
             {
@@ -26,11 +27,20 @@ internal static partial class Program
                 AssertTrue(SpinWait.SpinUntil(() => store.ReadAppliedValue(store.Resolve(MinecraftLaunchProgressState.AcquirePendingKey)) is true, TimeSpan.FromSeconds(5)));
                 AssertFalse((await coordinator.SelectJavaVersionAsync(8)).IsSuccess);
                 AssertTrue((await coordinator.SelectJavaVersionAsync(17)).IsSuccess);
-                AssertTrue((await launch.WaitAsync(TimeSpan.FromSeconds(10))).IsSuccess);
+                var result = await launch.WaitAsync(TimeSpan.FromSeconds(10));
+                AssertTrue(result.IsSuccess, "Java choice launch failed: " + result.Error?.Message);
                 AssertEqual(installed ? 0 : 1, installer.Calls);
                 AssertFalse((await coordinator.SelectJavaVersionAsync(17)).IsSuccess);
             }
-            finally { Directory.Delete(root, true); }
+            finally
+            {
+                if (port.LastProcess is { } process)
+                {
+                    if (!process.HasExited) process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync();
+                }
+                Directory.Delete(root, true);
+            }
         }
     }
 
