@@ -23,6 +23,7 @@ internal static partial class Program
             scene = shell.Render(AccountTestSize);
             shell.Renderer.PointerMoved(pointer);
             AssertTrue(shell.Tree.GetComponent<XsrUiInput>(capsule.Entity)!.IsHovered);
+            AssertEqual(XsrUiPointerCursor.Hand, shell.Renderer.PointerCursorAt(pointer));
         }
         // Real pointer departure is still immediate. Hysteresis never changes click hit rectangles.
         shell.Renderer.PointerMoved(new XsrUiPoint(800, 460));

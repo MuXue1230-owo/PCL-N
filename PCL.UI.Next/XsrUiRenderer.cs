@@ -810,7 +810,7 @@ public sealed partial class XsrUiRenderer
     /// </summary>
     public XsrUiPointerCursor PointerCursorAt(XsrUiPoint point)
     {
-        XsrUiEntityId entity = InputAt(point);
+        XsrUiEntityId entity = StableHoverTarget(point, InputAt(point));
         if (!entity.IsAssigned || _tree.GetComponent<XsrUiInput>(entity) is not { } input
             || !IsEnabled(input))
         {
@@ -888,6 +888,17 @@ public sealed partial class XsrUiRenderer
         return InputAt(point).Equals(pressed) && Activate(pressed);
     }
 
+    // Both hover and cursor use the same target while capsule geometry moves underneath
+    // a stationary pointer. Physical movement still resolves the current hit geometry.
+    private XsrUiEntityId StableHoverTarget(XsrUiPoint point, XsrUiEntityId hit)
+    {
+        double dx = point.X - _hoverDecisionPoint.X, dy = point.Y - _hoverDecisionPoint.Y;
+        return point.X >= 0 && point.Y >= 0 && hit != _hovered && _hovered.IsAssigned
+            && _tree.IsAlive(_hovered) && IsInVisibleTree(_hovered)
+            && _tree.GetComponent<XsrUiVisualStyle>(_hovered)?.HoverExpand == true
+            && dx * dx + dy * dy <= 9 ? _hovered : hit;
+    }
+
     /// <summary>
     /// Routes a pointer move, updating hover state on input entities. The return value reports
     /// whether presentation state changed, so a backend can commit a frame when the pointer
@@ -899,14 +910,9 @@ public sealed partial class XsrUiRenderer
         if (MoveScrollGesture(point)) return true;
         if (MovePagerGesture(point)) { AbandonScrollGesture(); return true; }
         XsrUiEntityId entity = InputAt(point);
-        // Layout can synthesize pointer moves without physical motion. Do not let a
-        // capsule change its own target because its or a neighbour's width changed.
-        double dx = point.X - _hoverDecisionPoint.X, dy = point.Y - _hoverDecisionPoint.Y;
-        if (point.X >= 0 && point.Y >= 0 && entity != _hovered && _hovered.IsAssigned
-            && _tree.IsAlive(_hovered) && IsInVisibleTree(_hovered)
-            && _tree.GetComponent<XsrUiVisualStyle>(_hovered)?.HoverExpand == true
-            && dx * dx + dy * dy <= 9) entity = _hovered;
-        else _hoverDecisionPoint = point;
+        XsrUiEntityId stable = StableHoverTarget(point, entity);
+        if (stable == entity) _hoverDecisionPoint = point;
+        entity = stable;
         XsrUiInput? input = entity.IsAssigned ? _tree.GetComponent<XsrUiInput>(entity) : null;
         bool overInput = input is not null && IsEnabled(input);
         bool changed = false;

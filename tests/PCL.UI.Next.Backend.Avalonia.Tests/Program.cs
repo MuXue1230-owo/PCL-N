@@ -370,6 +370,7 @@ internal static partial class Program
             await Task.Delay(30).ConfigureAwait(true);
             VerifyAccessibleContentAndNativeFocus(window, shell, surface);
             VerifyPointerCursorProjection(window, shell, surface);
+            await VerifyOverlayReorderAndReentry(shell, surface);
             await VerifyPlatformClipboard(window).ConfigureAwait(true);
             VerifyNativeTextEditing(window, shell, surface);
             await VerifyTransitionGroupsAndMedia(shell, surface);
@@ -530,6 +531,51 @@ internal static partial class Program
         navigation.Apply(navigation.Node with { Label = "应用设置" });
         AssertEqual("应用设置", peer.GetName());
         Console.WriteLine("PASS: native accessibility tree, keyboard focus and invoke are connected");
+    }
+
+    private static async Task VerifyOverlayReorderAndReentry(XsrUiShell shell, AvaloniaUiSceneSurface surface)
+    {
+        AssertTrue(AvaloniaUiIcons.TryGetGeometry("lucide/power", out var power));
+        AssertTrue(power.Count > 0);
+        bool wasReduced = shell.Renderer.ReducedMotion;
+        shell.Renderer.ReducedMotion = false;
+        var preceding = shell.Tree.Create("reentry-preceding");
+        shell.Tree.SetComponent(preceding, new XsrUiElement { Width = 48, Height = 48, IsVisible = false });
+        shell.Tree.SetComponent(preceding, new XsrUiOverlayMotion(XsrUiOverlayMotionKind.Notification));
+        shell.Stage.Show(preceding);
+        var bubble = shell.Tree.Create("reentry-bubble");
+        shell.Tree.SetComponent(bubble, new XsrUiElement { Width = 48, Height = 48 });
+        shell.Tree.SetComponent(bubble, new XsrUiOverlayMotion(XsrUiOverlayMotionKind.Notification));
+        shell.Stage.Show(bubble);
+        surface.CommitScene();
+        var control = surface.Children.OfType<AvaloniaUiSceneNodeControl>().Single(item => item.Node.Entity == bubble);
+        int detached = 0;
+        control.DetachedFromVisualTree += (_, _) => detached++;
+        // Adding an earlier sibling must not detach live controls or interrupt their entry spring.
+        shell.Tree.GetComponent<XsrUiElement>(preceding)!.IsVisible = true;
+        shell.Tree.MarkDirty(preceding, XsrUiDirtyKinds.Layout);
+        surface.CommitScene();
+        AssertEqual(0, detached);
+        await Task.Delay(450).ConfigureAwait(true);
+        AssertTrue(control.PresentedOverlayProgress > .9);
+        var motion = shell.Tree.GetComponent<XsrUiOverlayMotion>(bubble)!;
+        motion.IsClosing = true; shell.Tree.MarkDirty(bubble, XsrUiDirtyKinds.Paint); surface.CommitScene();
+        await Task.Delay(40).ConfigureAwait(true);
+        motion.IsClosing = false; shell.Tree.MarkDirty(bubble, XsrUiDirtyKinds.Paint); surface.CommitScene();
+        await Task.Delay(450).ConfigureAwait(true);
+        AssertTrue(control.PresentedOverlayProgress > .9);
+        shell.Tree.GetComponent<XsrUiElement>(bubble)!.IsVisible = false;
+        shell.Tree.MarkDirty(bubble, XsrUiDirtyKinds.Layout); surface.CommitScene();
+        shell.Tree.GetComponent<XsrUiElement>(bubble)!.IsVisible = true;
+        shell.Tree.MarkDirty(bubble, XsrUiDirtyKinds.Layout); surface.CommitScene();
+        control = surface.Children.OfType<AvaloniaUiSceneNodeControl>().Single(item => item.Node.Entity == bubble);
+        await Task.Delay(450).ConfigureAwait(true);
+        AssertTrue(control.PresentedOverlayProgress > .9);
+        shell.Stage.Dismiss(bubble); shell.Tree.Destroy(bubble);
+        shell.Stage.Dismiss(preceding); shell.Tree.Destroy(preceding);
+        surface.CommitScene();
+        shell.Renderer.ReducedMotion = wasReduced;
+        Console.WriteLine("PASS: overlay reordering preserves attachment and hiding/reentry resumes animation");
     }
 
     private static void VerifyPointerCursorProjection(

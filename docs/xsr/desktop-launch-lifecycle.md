@@ -12,3 +12,5 @@ Host Services own Java selection, runtime acquisition, process supervision and c
 Validation: Desktop input/navigation regressions, Service process/Java contracts, architecture checks, trim and NativeAOT shell smoke.
 
 Shell bubbles share a bottom-up vertical dock. Hidden and closing bubbles reserve no slot; overlay motion supplies interruptible entry, exit and reflow with reduced-motion support. Version rows reserve a check column before the icon, and actions use the existing expanding-capsule primitive.
+
+Overlay sibling reordering preserves native attachment and in-flight animation. Capsule cursor feedback uses the same stable hover target as expansion; busy launch progress retains the enabled primary-action color.

@@ -59,6 +59,19 @@ internal static partial class Program
         scene = fixture.Shell.Render(new(850, 500));
         AssertTrue(HasKey(fixture.Shell, scene, "LaunchingPage"));
         AssertEqual("正在启动", ReadCell(fixture.Store, LaunchPageState.TitleTransitionKey));
+        // Re-minimizing during the exit must revive the same live bubble and cancel its retirement.
+        fixture.Shell.Render(new(850, 500));
+        Emit(fixture.Intents, "ui.page.back");
+        fixture.Shell.Render(new(850, 500));
+        scene = fixture.Shell.Render(new(850, 500));
+        var restoredBubble = FindByKey(fixture.Shell, scene, "launch-bubble");
+        AssertFalse(restoredBubble.IsOverlayClosing);
+        AssertTrue(restoredBubble.IsClickable);
+        AssertTrue(HasKey(fixture.Shell, scene, "launch-bubble-icon"));
+        AssertEqual(new XsrUiColor(11, 91, 203), FindByKey(fixture.Shell, scene, "LaunchButtonProgress").VisualStyle.Background);
+        AssertTrue(fixture.Shell.Renderer.Activate(restoredBubble.Entity));
+        scene = fixture.Shell.Render(new(850, 500));
+        AssertTrue(HasKey(fixture.Shell, scene, "LaunchingPage"));
     }
 
     private static void LaunchOverlayNarratesProgressCells()

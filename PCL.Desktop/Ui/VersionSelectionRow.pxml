@@ -10,7 +10,7 @@
       </StackPanel>
       <Text Key="LibraryRowDetail" Height="20" />
     </StackPanel>
-    <Button Key="LibraryRowModify" Icon="lucide/pencil" Content="修改" Command="ui.versions.modify" Width="76" Height="32" VerticalAlignment="Center" />
+    <Button Key="LibraryRowModify" Icon="lucide/wrench" Content="修改" Command="ui.versions.modify" Width="76" Height="32" VerticalAlignment="Center" />
     <Button Key="LibraryRowSettings" Icon="lucide/settings" Content="设置" Command="ui.versions.settings" Width="76" Height="32" VerticalAlignment="Center" />
     <Button Key="LibraryRowDelete" Icon="lucide/trash-2" Content="删除" Command="ui.versions.delete" Width="76" Height="32" VerticalAlignment="Center" />
   </StackPanel>

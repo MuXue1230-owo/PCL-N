@@ -65,7 +65,7 @@ internal sealed partial class LaunchPageController
         if (!_processPresentationInitialized && _pageEntities.TryGetValue("LaunchButtonProgress", out var fill))
         {
             _processPresentationInitialized = true;
-            _shell.Tree.SetComponent(fill, new XsrUiVisualStyle { Background = new(255, 255, 255, 55), CornerRadius = 20 });
+            _shell.Tree.SetComponent(fill, new XsrUiVisualStyle { Surface = XsrUiSurfaceKind.Solid, Background = LaunchButtonBackground, CornerRadius = 20 });
             var text = _pageEntities["LaunchButtonText"];
             _shell.Tree.SetComponent(text, new XsrUiVisualStyle { Foreground = new(255, 255, 255), FontSize = 15, FontWeight = 600 });
         }

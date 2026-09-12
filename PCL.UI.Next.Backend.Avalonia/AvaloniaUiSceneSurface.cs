@@ -378,8 +378,8 @@ public sealed partial class AvaloniaUiSceneSurface : Panel, IDisposable
             int currentIndex = Children.IndexOf(control);
             if (currentIndex != index)
             {
-                Children.RemoveAt(currentIndex);
-                Children.Insert(index, control);
+                // Reordering must not detach live text inputs or cancel overlay springs.
+                Children.Move(currentIndex, index);
             }
         }
 
