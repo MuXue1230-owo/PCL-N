@@ -36,6 +36,10 @@ internal static partial class Program
 
     private static readonly (string Name, Action Body)[] TestCases =
     [
+        ("Settings page keeps the final navigation and compact layout", SettingsPageUsesFinalNavigationAndCompactLayout),
+        ("Settings page saves through Services without losing draft focus", SettingsPageSavesThroughServicesAndPreservesDraftFocus),
+        ("Settings developer toggle preserves scroll position and focus", SettingsDeveloperToggleKeepsPositionAndFocus),
+        ("Settings choices anchor tightly and commit explicit selection", SettingsChoiceMenuIsAnchoredAndCommitsSelection),
         ("version row actions keep selection distinct", VersionRowActionsKeepSelectionDistinct),
         ("Java choice page routes selected major and launch action tracks progress", JavaChoiceAndLaunchProgressStayInteractive),
         ("process controls address sessions and show Service crash reports", ProcessControlsProjectServiceFacts),

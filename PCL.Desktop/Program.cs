@@ -259,6 +259,8 @@ internal static class Program
             runtime.Host.StateStore, launchPage.AccountBody, feedback,
             new NativeAccountUiEffects(platformActions), runtime.Host.Logging);
         launchPage.Attach();
+        using SettingsPageController settingsPage = new(shell, uiIntents, runtime.Queries, runtime.Commands, host.StateStore, feedback);
+        launchPage.SettingsPage = settingsPage.Page;
         // The launch page projects launch-progress cells into overlay display strings, so the
         // composition root adds its observer to the shared store fan-out.
         using IDisposable launchStateSubscription = stateObservation.Subscribe(launchPage.StateObserver);

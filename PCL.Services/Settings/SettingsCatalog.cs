@@ -9,6 +9,8 @@ public sealed record SettingsCatalogEntry(string Id, string? Parent, string Scop
 {
     public SettingsPolicyDefinition? Definition => SettingKey is { } key ? SettingsPolicySchema.ByKey[key] : null;
     public bool InvertBoolean => SettingKey == "appearance.animations-disabled";
+    public bool IsRuntimeDetail => Scope == "global" && Page == "java" && !DeveloperOnly
+        && Section is not ("自动策略" or "已安装 Java" or "Java 管理");
     public string Owner { get; init; } = "PCL.Services.Settings";
     public string UnavailableReason => Availability == SettingsCapabilityAvailability.NotImplemented ? "尚未可用" : Availability.ToString();
 }
@@ -37,7 +39,9 @@ public static class SettingsCatalog
             row.GetProperty("id").GetString()!, row.GetProperty("parent").GetString(), row.GetProperty("scope").GetString()!,
             row.GetProperty("page").GetString()!, row.GetProperty("section").GetString()!, row.GetProperty("label").GetString()!,
             Enum.Parse<SettingsCatalogEntryKind>(row.GetProperty("kind").GetString()!), row.GetProperty("key").GetString(),
-            row.GetProperty("developer").GetBoolean(), SettingsCapabilityAvailability.NotImplemented)).ToArray();
+            row.GetProperty("developer").GetBoolean(), row.GetProperty("key").GetString() is
+                "game.width" or "game.height" or "game.window-mode" or "game.jvm" or "game.arguments" or "developer.enabled"
+                    ? SettingsCapabilityAvailability.Available : SettingsCapabilityAvailability.NotImplemented)).ToArray();
         if (result.Select(item => item.Id).Distinct(StringComparer.Ordinal).Count() != result.Length)
             throw new InvalidOperationException("Settings catalog identifiers must be unique.");
         return Array.AsReadOnly(result);
