@@ -43,9 +43,8 @@ public interface IMinecraftInstallMetadataSource
 /// Runs real installs into a Minecraft root: resolves the vanilla version JSON (and, for the
 /// Fabric family, the loader profile JSON), plans every file through the shared download
 /// planners with bmclapi failover ordering, writes the version directory, and reports the
-/// whole run as one task-center task with byte-accurate progress. Processor-based loaders
-/// other than Forge and NeoForge are rejected with an explicit not-yet-migrated message instead of a
-/// half-built instance.
+/// whole run as one task-center task with byte-accurate progress. Installer-based loaders
+/// execute in an isolated root and publish their version only after validation.
 /// </summary>
 public sealed class MinecraftInstallService : IDisposable
 {
@@ -123,11 +122,11 @@ public sealed class MinecraftInstallService : IDisposable
         ITaskCenterTask task,
         CancellationToken token)
     {
-        bool processorLoader = command.Loader is InstallLoader.Forge or InstallLoader.NeoForge;
+        bool processorLoader = command.Loader is InstallLoader.Forge or InstallLoader.NeoForge or InstallLoader.Cleanroom or InstallLoader.OptiFine;
         if (command.Loader is not null && !IsProfileJsonLoader(command.Loader.Value) && !processorLoader)
         {
             throw new InvalidOperationException(
-                $"{LoaderDisplayName(command.Loader.Value)} 安装需要执行安装器程序，此路径尚未迁移到 Nexa。");
+                $"{LoaderDisplayName(command.Loader.Value)} 不能作为主加载器安装，请选择对应的基础加载器。");
         }
 
         if (command.Loader is not null && string.IsNullOrWhiteSpace(command.LoaderBuild))
@@ -161,7 +160,7 @@ public sealed class MinecraftInstallService : IDisposable
         if (loaderJson is not null)
         {
             loaderJson["id"] = instanceId;
-            loaderJson["inheritsFrom"] = game;
+            SetLoaderParent(loaderJson, game);
         }
 
         // A stage boundary is not the whole task: reporting 1 here made the card flash 100%
@@ -276,6 +275,14 @@ public sealed class MinecraftInstallService : IDisposable
                 file.LocalPath, file.Hash, file.ActualSize));
         }
 
+        if (loaderJson?["_nexaLabyAssets"] is JsonObject labyAssets)
+            foreach (var asset in labyAssets)
+            {
+                if (!MinecraftVersionPaths.IsSafeReference(asset.Key)) throw new InvalidDataException("LabyMod 资源名称无效。");
+                string url = asset.Value!.ToString();
+                if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new InvalidDataException("LabyMod 资源地址无效。");
+                loaderFiles.Add(new PlannedFile([url], Path.Combine(root, "labymod-neo", "assets", asset.Key + ".jar"), Path.GetFileNameWithoutExtension(uri.AbsolutePath), 0));
+            }
         if (command.Addons is { Count: > 0 })
         {
             string modsDirectory = Path.Combine(root, "mods");
@@ -393,8 +400,11 @@ public sealed class MinecraftInstallService : IDisposable
                 new(root, game, instanceId, command.Loader!.Value, command.LoaderBuild!, vanillaJson),
                 new InstallerProgress(message => task.Report(StagePlan[2], message, 0.99, totalFiles, totalFiles, 0)), token).ConfigureAwait(false);
             loaderJson["id"] = instanceId;
-            loaderJson["inheritsFrom"] = game;
+            SetLoaderParent(loaderJson, game);
         }
+
+        if (loaderJson is not null)
+            await AdditionalLoaderProfiles.VerifyLiteLoaderAsync(loaderJson, root, token).ConfigureAwait(false);
 
         // The documents land only now: the instance becomes discoverable exactly when its
         // files are complete. Re-runs skip existing files, so this commit is cheap.
@@ -502,6 +512,9 @@ public sealed class MinecraftInstallService : IDisposable
                     throw new InvalidOperationException("附属 Mod 下载信息无效。");
             return addon.Downloads;
         }
+        if (addon.Kind == InstallLoader.OptiFine)
+            return [new InstallDownload("BMCLAPI", "OptiFine_" + SafeName(addon.Version) + ".jar",
+                new Uri(ForgeInstallService.InstallerUrl(InstallLoader.OptiFine, gameVersion, addon.Version)), null, 0)];
         if (_catalog is null)
         {
             throw new InvalidOperationException("没有可用的安装目录源，无法解析附加组件。");
@@ -553,8 +566,15 @@ public sealed class MinecraftInstallService : IDisposable
             : throw new InvalidOperationException($"版本名 {value} 不能用作目录名。");
     }
 
+    private static void SetLoaderParent(JsonObject profile, string game)
+    {
+        if (profile["inheritsFrom"] is null && profile["downloads"]?["client"] is not null)
+            profile["jar"] = game;
+        else profile["inheritsFrom"] = game;
+    }
+
     private static bool IsProfileJsonLoader(InstallLoader loader) =>
-        loader is InstallLoader.Fabric or InstallLoader.LegacyFabric or InstallLoader.Quilt;
+        loader is InstallLoader.Fabric or InstallLoader.LegacyFabric or InstallLoader.Quilt or InstallLoader.LiteLoader or InstallLoader.LabyMod;
 
     private static string LoaderDisplayName(InstallLoader loader) => loader switch
     {
@@ -612,6 +632,19 @@ public sealed class MinecraftInstallService : IDisposable
         public async Task<JsonObject> FetchLoaderProfileJsonAsync(
             InstallLoader loader, string gameVersion, string build, CancellationToken cancellationToken)
         {
+            if (loader == InstallLoader.LabyMod)
+            {
+                string[] parts = build.Split('+');
+                if (parts.Length != 3 || parts.Any(string.IsNullOrWhiteSpace)) throw new InvalidDataException("LabyMod 版本标识无效。");
+                var manifest = await FetchJsonAsync([$"https://releases.r2.labymod.net/api/v1/manifest/{Uri.EscapeDataString(parts[0])}/latest.json"], cancellationToken).ConfigureAwait(false);
+                if (manifest["commitReference"]?.ToString() != parts[2] || manifest["labyModVersion"]?.ToString() != parts[1])
+                    throw new InvalidDataException("LabyMod 发布已更新，请刷新版本列表后重新选择。");
+                var profile = await FetchJsonAsync([$"https://releases.r2.labymod.net/api/v1/download/manifest/labymod4/{Uri.EscapeDataString(parts[0])}/{Uri.EscapeDataString(gameVersion)}/{Uri.EscapeDataString(parts[2])}.json"], cancellationToken).ConfigureAwait(false);
+                var libraries = await FetchJsonAsync([$"https://releases.r2.labymod.net/api/v1/libraries/{Uri.EscapeDataString(parts[0])}.json"], cancellationToken).ConfigureAwait(false);
+                return AdditionalLoaderProfiles.LabyMod(profile, manifest, libraries, gameVersion, parts[0]);
+            }
+            if (loader == InstallLoader.LiteLoader)
+                return AdditionalLoaderProfiles.LiteLoader(await FetchJsonAsync(["https://dl.liteloader.com/versions/versions.json"], cancellationToken).ConfigureAwait(false), gameVersion, build);
             string host = loader switch
             {
                 InstallLoader.Fabric => "meta.fabricmc.net/v2",
@@ -662,7 +695,8 @@ public sealed class MinecraftInstallService : IDisposable
         public async ValueTask<DownloadConnectionInfo> StartAsync(
             long beginOffset, CancellationToken cancellationToken = default)
         {
-            HttpRequestMessage request = new(HttpMethod.Get, source);
+            using HttpRequestMessage request = new(HttpMethod.Get, source);
+            request.Headers.UserAgent.ParseAdd("PCL-Nexa/2.0");
             if (beginOffset > 0)
             {
                 request.Headers.Range = new RangeHeaderValue(beginOffset, null);

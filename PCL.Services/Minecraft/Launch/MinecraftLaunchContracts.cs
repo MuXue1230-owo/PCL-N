@@ -443,6 +443,9 @@ public static class MinecraftLaunchPlanner
                     if (value is JsonArray parentArray) arguments[key] = parentArray.DeepClone();
         if (current["arguments"] is JsonObject currentArguments)
         {
+            if (currentArguments["game"] is JsonArray && arguments["game"] is null
+                && current["minecraftArguments"] is null && result["minecraftArguments"] is { } legacyArguments)
+                arguments["game"] = new JsonArray(Tokenize(legacyArguments.ToString()).Select(text => (JsonNode?)JsonValue.Create(text)).ToArray());
             foreach ((string key, JsonNode? value) in currentArguments)
             {
                 if (value is JsonArray currentArray && arguments[key] is JsonArray existing)

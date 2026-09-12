@@ -23,7 +23,7 @@ internal static partial class Program
 
     private static async ValueTask ForgeAndNeoForgeCommitInstallerManifestLast()
     {
-        foreach (var loader in new[] { InstallLoader.Forge, InstallLoader.NeoForge })
+        foreach (var loader in new[] { InstallLoader.Forge, InstallLoader.NeoForge, InstallLoader.Cleanroom, InstallLoader.OptiFine })
         {
             string root = Path.Combine(Path.GetTempPath(), "nexa-install-tests", Guid.NewGuid().ToString("N"));
             try

@@ -18,17 +18,21 @@ public interface IMinecraftLoaderInstaller
 }
 
 /// <summary>Runs the official loader installer in an isolated root, then promotes only loader artifacts.</summary>
-public sealed class ForgeInstallService(DownloadService downloads, HttpClient http,
+public sealed partial class ForgeInstallService(DownloadService downloads, HttpClient http,
     Func<string, IDownloadConnection>? connectionFactory = null,
     Func<MinecraftLoaderInstallRequest, CancellationToken, Task<string>>? resolveJava = null,
     Func<ProcessStartInfo, CancellationToken, Task>? runProcess = null) : IMinecraftLoaderInstaller
 {
     public static string InstallerUrl(InstallLoader loader, string game, string build)
     {
-        if (loader is not (InstallLoader.Forge or InstallLoader.NeoForge)) throw new ArgumentException("Unsupported installer.");
+        if (loader is not (InstallLoader.Forge or InstallLoader.NeoForge or InstallLoader.Cleanroom or InstallLoader.OptiFine)) throw new ArgumentException("Unsupported installer.");
         if (string.IsNullOrEmpty(game) || string.IsNullOrEmpty(build)
             || !(game + build).All(c => char.IsAsciiLetterOrDigit(c) || c is '.' or '-' or '_'))
             throw new InvalidDataException("加载器版本标识无效。");
+        if (loader == InstallLoader.Cleanroom && game != "1.12.2") throw new InvalidDataException("Cleanroom 仅支持 Minecraft 1.12.2。");
+        if (loader == InstallLoader.Cleanroom)
+            return $"https://github.com/CleanroomMC/Cleanroom/releases/download/{build}/cleanroom-{build}-installer.jar";
+        if (loader == InstallLoader.OptiFine) return OptiFineUrl(game, build);
         bool forge = loader == InstallLoader.Forge;
         string artifact = forge || game == "1.20.1" ? "forge" : "neoforge";
         string version = forge ? game.Replace('-', '_') + "-" + build : game == "1.20.1" ? game + "-" + build : build;
@@ -46,18 +50,34 @@ public sealed class ForgeInstallService(DownloadService downloads, HttpClient ht
         try
         {
             string installer = Path.Combine(stage, "installer.jar");
-            string sha = (await http.GetStringAsync(url + ".sha1", token).ConfigureAwait(false)).Trim().Split(' ', '\t', '\r', '\n')[0];
-            if (sha.Length != 40 || !sha.All(char.IsAsciiHexDigit)) throw new InvalidDataException("安装器校验信息无效。");
+            string? sha = null;
+            string? sha256 = null;
+            if (request.Loader == InstallLoader.Cleanroom)
+                sha256 = await CleanroomDigestAsync(request.Build, token).ConfigureAwait(false);
+            else if (request.Loader != InstallLoader.OptiFine)
+            {
+                sha = (await http.GetStringAsync(url + ".sha1", token).ConfigureAwait(false)).Trim().Split(' ', '\t', '\r', '\n')[0];
+                if (sha.Length != 40 || !sha.All(char.IsAsciiHexDigit)) throw new InvalidDataException("安装器校验信息无效。");
+            }
             progress?.Report("正在下载安装器");
             await TransferAsync(url, installer, sha, 0, token).ConfigureAwait(false);
+            if (sha256 is not null)
+            {
+                await using var input = File.OpenRead(installer);
+                string actual = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(input, token).ConfigureAwait(false));
+                if (!actual.Equals(sha256, StringComparison.OrdinalIgnoreCase)) throw new InvalidDataException("Cleanroom 安装器校验失败。");
+            }
             string gameDir = Contained(stage, "versions/" + request.Game);
             Directory.CreateDirectory(gameDir);
             await File.WriteAllTextAsync(Path.Combine(gameDir, request.Game + ".json"), request.VanillaJson.ToJsonString(), token).ConfigureAwait(false);
             File.Copy(Contained(root, "versions/" + request.Game + "/" + request.Game + ".jar"), Path.Combine(gameDir, request.Game + ".jar"));
             await File.WriteAllTextAsync(Path.Combine(stage, "launcher_profiles.json"), "{\"profiles\":{}}", token).ConfigureAwait(false);
 
-            JsonObject profile;
+            JsonObject profile = new();
             JsonObject version;
+            if (request.Loader == InstallLoader.OptiFine)
+                version = await InstallOptiFineAsync(request, stage, installer, progress, token).ConfigureAwait(false);
+            else
             using (var archive = ZipFile.OpenRead(installer))
             {
                 profile = ReadJson(archive, "install_profile.json");
@@ -83,9 +103,12 @@ public sealed class ForgeInstallService(DownloadService downloads, HttpClient ht
             progress?.Report("正在准备安装器依赖");
             await PrefetchAsync(profile, root, stage, token).ConfigureAwait(false);
             await PrefetchAsync(version, root, stage, token).ConfigureAwait(false);
-            if (profile["versionInfo"] is not JsonObject)
+            if (request.Loader != InstallLoader.OptiFine && profile["versionInfo"] is not JsonObject)
             {
-                string java = await (resolveJava ?? ResolveJavaAsync)(request, token).ConfigureAwait(false);
+                var javaRequest = request.Loader == InstallLoader.Cleanroom
+                    ? request with { VanillaJson = new JsonObject { ["javaVersion"] = new JsonObject { ["majorVersion"] = 17 } } }
+                    : request;
+                string java = await (resolveJava ?? ResolveJavaAsync)(javaRequest, token).ConfigureAwait(false);
                 progress?.Report("正在运行加载器安装器");
                 var start = new ProcessStartInfo(java)
                 {

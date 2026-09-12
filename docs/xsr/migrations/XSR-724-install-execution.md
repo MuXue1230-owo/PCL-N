@@ -31,11 +31,10 @@ build, addon list); the runtime composer builds the router over the foundation h
 
 ## Scope boundary (explicit)
 
-Deferred processor-based loaders (Cleanroom, OptiFine's installer path, LiteLoader,
-LabyMod) are rejected **before any disk write** with a message that names the missing path —
-Forge and NeoForge use the isolated official installer flow described below. The Fabric family (Fabric, Legacy Fabric,
-Quilt) is fully supported because their profile JSON is declarative. The Java-runtime and
-Bedrock install flows remain on their own tracks (JavaRuntimeInstaller / XSR-721).
+Forge, NeoForge, Cleanroom and OptiFine use isolated installer execution. Fabric, Legacy
+Fabric, Quilt, LiteLoader and LabyMod install from declarative metadata. Dependent mods
+cannot be submitted as primary loaders. Java-runtime and Bedrock installation remain on
+their own tracks (JavaRuntimeInstaller / XSR-721).
 
 ## Integrity and scoping corrections (2026-09-09, review round)
 
@@ -78,7 +77,7 @@ Forge and NeoForge use official Maven installers in a private staging root. Serv
 compatible Java, prefetch declared installer libraries with the shared download engine, run
 `--installClient` without a console window, drain output and terminate the installer on cancellation.
 Only a successful, validated loader manifest is published to the real version library; staging
-launcher profiles never replace user profiles. Other processor loaders remain deferred.
+launcher profiles never replace user profiles. Cleanroom and OptiFine extend the same isolation boundary below.
 
 Validation: deterministic service tests cover Forge/NeoForge dispatch, staging isolation,
 manifest-last publication, generated-library integrity and missing processor output. Real
@@ -89,3 +88,23 @@ Inherited and renamed Forge instances retain their display identity in `version_
 BootstrapLauncher `ignoreList` additionally names the actual resolved client JAR. Legacy
 manifests without JVM arguments receive `java.library.path` pointing to the executor's native
 extraction directory. An explicit manifest/custom JVM library path remains authoritative.
+
+## Additional loaders (2026-09-12)
+
+Cleanroom uses the isolated installer route with GitHub release artifact integrity and its
+own Java requirement. OptiFine invokes its installer API against an explicit staging root,
+without GUI or reliance on the user's APPDATA folder. LiteLoader uses the official version
+catalog to generate a LaunchWrapper profile; LabyMod uses the selected immutable commit's
+full version manifest. Full manifests remain full manifests and reference the vanilla client
+via `jar`; they must not inherit and duplicate vanilla arguments. Legacy base arguments remain
+present when a declarative loader contributes only a modern tweak-class argument slice.
+
+Additional-loader validation used official Cleanroom 0.6.12-alpha and OptiFine
+1.20.1_HD_U_I6 installers, plus LiteLoader 1.12.2-SNAPSHOT and LabyMod 4.6.18/5bf3b413
+metadata and artifacts. LiteLoader uses surviving BMCLAPI/CERNET mirrors because its
+historical repository no longer serves the artifact; provider MD5 is checked before writing
+a SHA-1 repair fact. LabyMod adds the separate bootstrap library catalog and pinned client
+JAR, and hash-verifies its resource archives. The provider's client size differs from its
+actual JAR, so that artifact uses the matching provider SHA-1 as its integrity fact.
+Profile probes installed dependencies and validated one set of base launch arguments;
+they did not open interactive game windows.

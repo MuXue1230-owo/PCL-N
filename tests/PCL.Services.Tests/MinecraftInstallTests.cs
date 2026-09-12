@@ -246,14 +246,14 @@ internal static partial class Program
         try
         {
             XsrResult<MinecraftInstallResult> result = await fixture.Install.InstallAsync(
-                new MinecraftInstallCommand(root, "1.20.1", Loader: InstallLoader.Cleanroom, LoaderBuild: "0.3.0"));
+                new MinecraftInstallCommand(root, "1.20.1", Loader: InstallLoader.FabricApi, LoaderBuild: "0.3.0"));
             AssertFalse(result.IsSuccess);
             AssertFalse(Directory.Exists(root));
             AssertEqual(0, fixture.InstalledRoots.Count);
 
             TaskCenterEntry entry = fixture.Entry();
             AssertEqual(TaskCenterEntryState.Failed, entry.State);
-            AssertTrue(entry.ErrorMessage!.Contains("尚未迁移", StringComparison.Ordinal));
+            AssertTrue(entry.ErrorMessage!.Contains("不能作为主加载器", StringComparison.Ordinal));
         }
         finally
         {

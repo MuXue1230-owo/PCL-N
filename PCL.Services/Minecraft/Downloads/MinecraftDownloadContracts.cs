@@ -150,6 +150,15 @@ public static class MinecraftDownloadSourcePlanner
 
     public static string[] GetLibrarySources(string original, bool preferOfficialSource)
     {
+        const string litePath = "/com/mumfrey/liteloader/";
+        int liteOffset = original.IndexOf(litePath, StringComparison.Ordinal);
+        if (liteOffset >= 0)
+        {
+            string path = original[liteOffset..];
+            return new[] { "https://bmclapi2.bangbang93.com/maven" + path,
+                "https://mirrors.cernet.edu.cn/bmclapi" + path, "https://cmcc.mirrors.ustc.edu.cn/bmclapi" + path, original }
+                .Distinct(StringComparer.Ordinal).ToArray();
+        }
         string[] mirrors = [ReplaceLibraryMirror(original, "https://bmclapi2.bangbang93.com/maven"), ReplaceLibraryMirror(original, "https://bmclapi2.bangbang93.com/libraries"), original];
         return ContainsThirdParty(original) ? mirrors[..2] : OrderSources([original], mirrors, preferOfficialSource);
     }
