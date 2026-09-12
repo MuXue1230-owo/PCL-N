@@ -108,3 +108,22 @@ JAR, and hash-verifies its resource archives. The provider's client size differs
 actual JAR, so that artifact uses the matching provider SHA-1 as its integrity fact.
 Profile probes installed dependencies and validated one set of base launch arguments;
 they did not open interactive game windows.
+
+## Editing installed versions
+
+The install editor is the Java install presentation with a Service-projected immutable game
+version and instance identity. A sealed query reads the existing manifest and loader selections.
+An edit command carries its manifest fingerprint; Service rejects stale edits and game-version
+changes. Preparation uses an isolated root and verified reuse of existing downloads. Only generated
+artifacts are promoted; the version manifest commits last. User settings, saves, resource packs,
+unmanaged mods and directories are never recursively replaced or removed. Selecting vanilla
+replaces the launch definition; a same-name vanilla directory must not become its own parent.
+
+A sealed edit-plan query compares the existing and requested selections. Unchanged selections
+perform no install. Changes limited to API/QSL/OptiFabric (and compatible OptiFine components)
+update component files and the install receipt without fetching vanilla metadata or executing a
+base installer. A base loader/version change uses the staged reinstall path. UI labels project
+this decision. Existing retained builds need not remain present in the remote catalog.
+Defaults are read off the UI thread from receipts, loader coordinates, modern FML arguments
+and recognized mod descriptors. Managed component replacement is hash-checked and rolled back
+if publication fails; user-modified component files are retained.

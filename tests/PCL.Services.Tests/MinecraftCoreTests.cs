@@ -498,8 +498,13 @@ internal static partial class Program
             var request = new MinecraftLaunchRequest
             {
                 VersionJson = JsonNode.Parse("""{"id":"1.12.2-forge","mainClass":"net.minecraft.launchwrapper.Launch","minecraftArguments":"--version ${version_name} --tweakClass net.minecraftforge.fml.common.launcher.FMLTweaker"}""")!.AsObject(),
-                VersionId = "1.12.2-forge", InstanceDirectory = Path.GetTempPath(), MinecraftRootDirectory = Path.GetTempPath(),
-                ClientJarPath = jar, PlayerName = "Steve", PlayerUuid = "uuid", JavaMajorVersion = 8,
+                VersionId = "1.12.2-forge",
+                InstanceDirectory = Path.GetTempPath(),
+                MinecraftRootDirectory = Path.GetTempPath(),
+                ClientJarPath = jar,
+                PlayerName = "Steve",
+                PlayerUuid = "uuid",
+                JavaMajorVersion = 8,
             };
             var plan = MinecraftLaunchPlanner.CreatePlan(request);
             AssertEqual(1, plan.Arguments.Count(a => a == "-Djava.library.path=" + plan.NativesDirectory));

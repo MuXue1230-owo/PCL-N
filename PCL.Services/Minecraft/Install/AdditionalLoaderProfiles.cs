@@ -22,12 +22,15 @@ internal static class AdditionalLoaderProfiles
         libraries.Add((JsonNode)new JsonObject
         {
             ["name"] = "net.labymod:LabyMod:" + manifest["labyModVersion"] + "-" + commit,
-            ["downloads"] = new JsonObject { ["artifact"] = new JsonObject
+            ["downloads"] = new JsonObject
             {
-                ["url"] = $"https://releases.r2.labymod.net/api/v1/download/labymod4/{Uri.EscapeDataString(channel)}/{Uri.EscapeDataString(commit)}.jar",
-                // The provider's size can differ from its published JAR; its SHA-1 matches the artifact.
-                ["sha1"] = sha1,
-            } },
+                ["artifact"] = new JsonObject
+                {
+                    ["url"] = $"https://releases.r2.labymod.net/api/v1/download/labymod4/{Uri.EscapeDataString(channel)}/{Uri.EscapeDataString(commit)}.jar",
+                    // The provider's size can differ from its published JAR; its SHA-1 matches the artifact.
+                    ["sha1"] = sha1,
+                }
+            },
         });
         if (profile["libraries"] is null) profile["libraries"] = libraries;
         JsonObject assets = new();
@@ -67,8 +70,11 @@ internal static class AdditionalLoaderProfiles
         return new JsonObject
         {
             ["_nexaLiteLoaderMd5"] = latest["md5"]?.DeepClone(),
-            ["id"] = game + "-LiteLoader", ["inheritsFrom"] = game, ["jar"] = game,
-            ["mainClass"] = "net.minecraft.launchwrapper.Launch", ["libraries"] = libraries,
+            ["id"] = game + "-LiteLoader",
+            ["inheritsFrom"] = game,
+            ["jar"] = game,
+            ["mainClass"] = "net.minecraft.launchwrapper.Launch",
+            ["libraries"] = libraries,
             ["arguments"] = new JsonObject { ["game"] = new JsonArray("--tweakClass", latest["tweakClass"]?.ToString() ?? "com.mumfrey.liteloader.launch.LiteLoaderTweaker") },
         };
     }

@@ -6,7 +6,7 @@ namespace PCL.Services.Minecraft.Install;
 public sealed record InstallBuildSelection(InstallLoader Loader, string Version);
 public sealed record InstallEligibilityQuery(string GameVersion, IReadOnlyList<InstallBuildSelection> Selection,
     InstallLoader? PrimaryLoader = null, InstallLoader? Catalog = null, IReadOnlyList<string>? Candidates = null,
-    string? ToggleVersion = null);
+    string? ToggleVersion = null, IReadOnlyList<InstallBuildSelection>? InstalledSelection = null);
 public sealed record InstallLoaderEligibility(InstallLoader Loader, bool IsAddon, bool Visible);
 public sealed record InstallBuildEligibility(string? Conflict, string? Notice);
 public sealed record InstallEligibilityResult(IReadOnlyList<InstallBuildSelection> Selection, InstallLoader? PrimaryLoader,
@@ -49,7 +49,7 @@ public sealed partial class InstallCatalogService
                 {
                     foreach (var other in selection.Keys.Where(kind => !InstallCompatibility.CanCombine(toggled, kind, query.GameVersion)).ToArray()) selection.Remove(other);
                     selection[toggled] = candidate;
-                    if (!InstallCompatibility.IsAddon(toggled)) primary = toggled;
+                    if (!InstallCompatibility.IsAddon(toggled) && !(toggled == InstallLoader.OptiFine && selection.Keys.Any(kind => kind != toggled && !InstallCompatibility.IsAddon(kind)))) primary = toggled;
                     if (selection.ContainsKey(InstallLoader.Fabric)) primary = InstallLoader.Fabric;
                 }
             }
@@ -63,7 +63,7 @@ public sealed partial class InstallCatalogService
                 if (visible && _game == query.GameVersion && _loaders.TryGetValue(loader, out var loaded)
                     && !loaded.Loading && loaded.Error is null && loaded.Revision > 0)
                     visible = loaded.Versions.Any(candidate => InstallCompatibility.BuildConflict(loader, candidate, selection) is null);
-                return new InstallLoaderEligibility(loader, InstallCompatibility.IsAddon(loader), visible);
+                return new InstallLoaderEligibility(loader, InstallCompatibility.IsAddon(loader) || loader == InstallLoader.OptiFine && primary is not null && primary != loader, visible || selection.ContainsKey(loader));
             }).ToArray();
             Dictionary<string, InstallBuildEligibility> builds = new(StringComparer.Ordinal);
             if (query.Catalog is { } active)
@@ -78,7 +78,7 @@ public sealed partial class InstallCatalogService
                 foreach (var second in selection.Keys)
                     if (!InstallCompatibility.CanCombine(first, second, query.GameVersion)) commitError ??= "所选加载器不能组合安装。";
             foreach (var item in selection)
-                commitError ??= Find(item.Key, item.Value.Id) is null ? "所选版本信息已失效，请重新选择。"
+                commitError ??= Find(item.Key, item.Value.Id) is null && !(query.InstalledSelection?.Any(installed => installed.Loader == item.Key && installed.Version == item.Value.Id) == true) ? "所选版本信息已失效，请重新选择。"
                     : InstallCompatibility.BuildConflict(item.Key, item.Value, selection);
             if (selection.ContainsKey(InstallLoader.OptiFabric) && !selection.ContainsKey(InstallLoader.OptiFine)) commitError ??= "OptiFabric 需要另选 OptiFine 版本。";
             return new(Array.AsReadOnly(selection.Select(pair => new InstallBuildSelection(pair.Key, pair.Value.Id)).ToArray()), primary,

@@ -20,7 +20,13 @@ public sealed record MinecraftInstallCommand(
     InstallLoader? Loader = null,
     string? LoaderBuild = null,
     IReadOnlyList<MinecraftInstallAddon>? Addons = null,
-    string? InstanceName = null);
+    string? InstanceName = null,
+    string? EditFingerprint = null)
+{
+    internal string? ReuseRoot { get; init; }
+    internal bool PreparingEdit { get; init; }
+    internal string? ModsRelativeDirectory { get; init; }
+}
 
 public sealed record MinecraftInstallResult(string InstanceId, string InstanceDirectory);
 
@@ -46,7 +52,7 @@ public interface IMinecraftInstallMetadataSource
 /// whole run as one task-center task with byte-accurate progress. Installer-based loaders
 /// execute in an isolated root and publish their version only after validation.
 /// </summary>
-public sealed class MinecraftInstallService : IDisposable
+public sealed partial class MinecraftInstallService : IDisposable
 {
     private const string ManifestUrl = "https://piston-meta.mojang.com/mc/game/version_manifest_v2.json";
     private static readonly string[] StagePlan = ["版本信息", "游戏文件", "加载器", "附加组件", "完成"];
@@ -100,7 +106,9 @@ public sealed class MinecraftInstallService : IDisposable
             cancellationToken, task.CancellationToken);
         try
         {
-            MinecraftInstallResult result = await RunAsync(command, task, linked.Token).ConfigureAwait(false);
+            MinecraftInstallResult result = command.EditFingerprint is null
+                ? await RunAsync(command, task, linked.Token).ConfigureAwait(false)
+                : await ReinstallAsync(command, task, linked.Token).ConfigureAwait(false);
             return XsrResult.Success(result);
         }
         catch (OperationCanceledException) when (linked.IsCancellationRequested)
@@ -137,7 +145,7 @@ public sealed class MinecraftInstallService : IDisposable
             ? SafeName($"{game}-{loader.ToString().ToLowerInvariant()}{loaderBuild}")
             : gameName;
         if (!string.IsNullOrWhiteSpace(command.InstanceName)) instanceId = SafeName(command.InstanceName);
-        if (command.Loader is not null && instanceId == gameName)
+        if (command.Loader is not null && instanceId == gameName && !command.PreparingEdit)
             throw new InvalidOperationException("加载器实例名称不能与原版版本目录相同。");
         string root = Path.GetFullPath(command.RootDirectory);
         string versionsRoot = Path.Combine(root, "versions");
@@ -283,15 +291,17 @@ public sealed class MinecraftInstallService : IDisposable
                 if (!Uri.TryCreate(url, UriKind.Absolute, out var uri) || uri.Scheme != "https") throw new InvalidDataException("LabyMod 资源地址无效。");
                 loaderFiles.Add(new PlannedFile([url], Path.Combine(root, "labymod-neo", "assets", asset.Key + ".jar"), Path.GetFileNameWithoutExtension(uri.AbsolutePath), 0));
             }
+        Dictionary<string, InstallLoader> managedModKinds = [];
         if (command.Addons is { Count: > 0 })
         {
-            string modsDirectory = Path.Combine(root, "mods");
+            string modsDirectory = ForgeInstallService.Contained(root, command.ModsRelativeDirectory ?? "mods");
             foreach (MinecraftInstallAddon addon in command.Addons)
             {
                 IReadOnlyList<InstallDownload> downloads = await ResolveAddonDownloadsAsync(
                     game, addon, token).ConfigureAwait(false);
                 InstallDownload download = downloads[0];
                 Directory.CreateDirectory(modsDirectory);
+                managedModKinds[Path.Combine(modsDirectory, SafeName(download.FileName))] = addon.Kind;
                 addonFiles.Add(new PlannedFile(
                     downloads.Where(candidate => string.IsNullOrEmpty(download.Sha1)
                         || string.Equals(candidate.Sha1, download.Sha1, StringComparison.OrdinalIgnoreCase))
@@ -325,6 +335,15 @@ public sealed class MinecraftInstallService : IDisposable
         {
             (string Stage, PlannedFile File) candidate = planned.First(
                 pair => MinecraftLibraryService.PathComparer.Equals(pair.File.Destination, destination));
+            if (command.ReuseRoot is { } reuseRoot && !File.Exists(candidate.File.Destination))
+            {
+                string original = ForgeInstallService.Contained(reuseRoot, Path.GetRelativePath(root, candidate.File.Destination));
+                if (await MinecraftFileVerifier.VerifyAsync(candidate.File.Expected with { Path = original }, token).ConfigureAwait(false))
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(candidate.File.Destination)!);
+                    File.Copy(original, candidate.File.Destination);
+                }
+            }
             if (!await MinecraftFileVerifier.VerifyAsync(candidate.File.Expected, token).ConfigureAwait(false))
             {
                 allFiles.Add(candidate);
@@ -406,6 +425,24 @@ public sealed class MinecraftInstallService : IDisposable
         if (loaderJson is not null)
             await AdditionalLoaderProfiles.VerifyLiteLoaderAsync(loaderJson, root, token).ConfigureAwait(false);
 
+        if (loaderJson?["inheritsFrom"] is not null && (instanceId == game || command.PreparingEdit))
+        {
+            loaderJson = MinecraftLaunchPlanner.MergeManifests(loaderJson, [vanillaJson]);
+            loaderJson.Remove("inheritsFrom");
+            loaderJson["jar"] = game;
+        }
+        JsonObject receipt = new() { ["game"] = game, ["loader"] = command.Loader?.ToString(), ["build"] = command.LoaderBuild };
+        receipt["addons"] = new JsonArray((command.Addons ?? []).Select(addon => (JsonNode?)new JsonObject { ["loader"] = addon.Kind.ToString(), ["build"] = addon.Version }).ToArray());
+        JsonArray managedMods = [];
+        foreach (var file in addonFiles)
+        {
+            await using var stream = File.OpenRead(file.Destination);
+            string hash = Convert.ToHexString(await System.Security.Cryptography.SHA256.HashDataAsync(stream, token).ConfigureAwait(false));
+            managedMods.Add((JsonNode)new JsonObject { ["path"] = Path.GetRelativePath(root, file.Destination).Replace('\\', '/'), ["sha256"] = hash, ["loader"] = managedModKinds[file.Destination].ToString() });
+        }
+        receipt["managedMods"] = managedMods;
+        (loaderJson ?? vanillaJson)["_nexaInstall"] = receipt;
+
         // The documents land only now: the instance becomes discoverable exactly when its
         // files are complete. Re-runs skip existing files, so this commit is cheap.
         await File.WriteAllTextAsync(
@@ -418,8 +455,11 @@ public sealed class MinecraftInstallService : IDisposable
                 loaderJson.ToJsonString(JsonOptions), token).ConfigureAwait(false);
         }
 
-        task.Complete($"已安装 {instanceId}");
-        Installed?.Invoke(root);
+        if (!command.PreparingEdit)
+        {
+            task.Complete($"已安装 {instanceId}");
+            Installed?.Invoke(root);
+        }
         return new MinecraftInstallResult(instanceId, instanceDirectory);
     }
 

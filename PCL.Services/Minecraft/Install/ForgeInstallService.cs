@@ -2,8 +2,8 @@ using System.Diagnostics;
 using System.IO.Compression;
 using System.Text.Json.Nodes;
 using PCL.Services.Downloads;
-using PCL.Services.Minecraft.Java;
 using PCL.Services.Minecraft.Downloads;
+using PCL.Services.Minecraft.Java;
 using PCL.Services.Minecraft.Launch;
 using PCL.Services.Minecraft.Libraries;
 
@@ -78,28 +78,28 @@ public sealed partial class ForgeInstallService(DownloadService downloads, HttpC
             if (request.Loader == InstallLoader.OptiFine)
                 version = await InstallOptiFineAsync(request, stage, installer, progress, token).ConfigureAwait(false);
             else
-            using (var archive = ZipFile.OpenRead(installer))
-            {
-                profile = ReadJson(archive, "install_profile.json");
-                version = profile["versionInfo"] is JsonObject legacy ? (JsonObject)legacy.DeepClone()
-                    : ReadJson(archive, profile["json"]?.ToString().TrimStart('/') ?? "version.json");
-                foreach (var entry in archive.Entries.Where(entry => entry.FullName.StartsWith("maven/", StringComparison.Ordinal) && entry.Name.Length > 0))
+                using (var archive = ZipFile.OpenRead(installer))
                 {
-                    token.ThrowIfCancellationRequested();
-                    if (entry.Length > 512 * 1024 * 1024) throw new InvalidDataException("安装器内嵌文件过大。");
-                    string target = Contained(stage, "libraries/" + entry.FullName[6..]);
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                    entry.ExtractToFile(target, overwrite: true);
+                    profile = ReadJson(archive, "install_profile.json");
+                    version = profile["versionInfo"] is JsonObject legacy ? (JsonObject)legacy.DeepClone()
+                        : ReadJson(archive, profile["json"]?.ToString().TrimStart('/') ?? "version.json");
+                    foreach (var entry in archive.Entries.Where(entry => entry.FullName.StartsWith("maven/", StringComparison.Ordinal) && entry.Name.Length > 0))
+                    {
+                        token.ThrowIfCancellationRequested();
+                        if (entry.Length > 512 * 1024 * 1024) throw new InvalidDataException("安装器内嵌文件过大。");
+                        string target = Contained(stage, "libraries/" + entry.FullName[6..]);
+                        Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                        entry.ExtractToFile(target, overwrite: true);
+                    }
+                    // Older Forge installers contain a declarative version and an embedded universal jar.
+                    if (profile["versionInfo"] is JsonObject && profile["install"] is JsonObject install)
+                    {
+                        string coordinate = install["path"]?.ToString() ?? throw new InvalidDataException("缺少 Forge Maven 坐标。");
+                        string target = MinecraftLibraryResolver.GetCoordinatePath(coordinate, stage);
+                        var entry = archive.GetEntry(install["filePath"]?.ToString() ?? "") ?? throw new InvalidDataException("缺少 Forge 内嵌文件。");
+                        Directory.CreateDirectory(Path.GetDirectoryName(target)!); entry.ExtractToFile(target, true);
+                    }
                 }
-                // Older Forge installers contain a declarative version and an embedded universal jar.
-                if (profile["versionInfo"] is JsonObject && profile["install"] is JsonObject install)
-                {
-                    string coordinate = install["path"]?.ToString() ?? throw new InvalidDataException("缺少 Forge Maven 坐标。");
-                    string target = MinecraftLibraryResolver.GetCoordinatePath(coordinate, stage);
-                    var entry = archive.GetEntry(install["filePath"]?.ToString() ?? "") ?? throw new InvalidDataException("缺少 Forge 内嵌文件。");
-                    Directory.CreateDirectory(Path.GetDirectoryName(target)!); entry.ExtractToFile(target, true);
-                }
-            }
             progress?.Report("正在准备安装器依赖");
             await PrefetchAsync(profile, root, stage, token).ConfigureAwait(false);
             await PrefetchAsync(version, root, stage, token).ConfigureAwait(false);
@@ -112,8 +112,11 @@ public sealed partial class ForgeInstallService(DownloadService downloads, HttpC
                 progress?.Report("正在运行加载器安装器");
                 var start = new ProcessStartInfo(java)
                 {
-                    WorkingDirectory = stage, UseShellExecute = false, CreateNoWindow = true,
-                    RedirectStandardOutput = true, RedirectStandardError = true,
+                    WorkingDirectory = stage,
+                    UseShellExecute = false,
+                    CreateNoWindow = true,
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
                 };
                 foreach (string arg in new[] { "-Djava.awt.headless=true", "-jar", installer, "--installClient", stage }) start.ArgumentList.Add(arg);
                 await (runProcess ?? RunAsync)(start, token).ConfigureAwait(false);
@@ -170,8 +173,11 @@ public sealed partial class ForgeInstallService(DownloadService downloads, HttpC
         var platform = MinecraftLaunchPlatform.Detect();
         return MinecraftLibraryResolver.Resolve(new()
         {
-            VersionJson = document, MinecraftRootDirectory = root, OperatingSystem = platform.OperatingSystem,
-            Is64BitArchitecture = platform.Is64BitArchitecture, IsArm64Architecture = platform.IsArm64Architecture,
+            VersionJson = document,
+            MinecraftRootDirectory = root,
+            OperatingSystem = platform.OperatingSystem,
+            Is64BitArchitecture = platform.Is64BitArchitecture,
+            IsArm64Architecture = platform.IsArm64Architecture,
             OperatingSystemVersion = platform.OperatingSystemVersion,
         });
     }
@@ -183,7 +189,8 @@ public sealed partial class ForgeInstallService(DownloadService downloads, HttpC
         var sources = PCL.Services.Minecraft.Downloads.MinecraftDownloadSourcePlanner.GetLibrarySources(url, true).Append(url).Distinct(StringComparer.Ordinal).ToArray();
         var result = await downloads.DownloadAsync(new DownloadRequest
         {
-            Sources = sources, DestinationPath = path,
+            Sources = sources,
+            DestinationPath = path,
             ConnectionFactory = source => connectionFactory?.Invoke(source) ?? new MinecraftInstallService.HttpConnection(http, source),
         }, cancellationToken: token).ConfigureAwait(false);
         if (!result.Success || !await MinecraftFileVerifier.VerifyAsync(new(path, size > 0 ? size : null, sha), token).ConfigureAwait(false))
@@ -198,7 +205,7 @@ public sealed partial class ForgeInstallService(DownloadService downloads, HttpC
         return JsonNode.Parse(reader.ReadToEnd()) as JsonObject ?? throw new InvalidDataException("安装器清单无效。");
     }
 
-    private static string Contained(string root, string relative)
+    internal static string Contained(string root, string relative)
     {
         string full = Path.GetFullPath(Path.Combine(root, relative.Replace('/', Path.DirectorySeparatorChar)));
         string prefix = Path.TrimEndingDirectorySeparator(Path.GetFullPath(root)) + Path.DirectorySeparatorChar;

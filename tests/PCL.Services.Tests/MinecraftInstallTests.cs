@@ -22,11 +22,12 @@ internal static partial class Program
     private sealed class FakeMetadata : IMinecraftInstallMetadataSource
     {
         public JsonObject VanillaJson { get; set; } = [];
+        public int VanillaReads;
         public JsonObject? LoaderJson { get; set; }
         public JsonObject AssetIndexJson { get; set; } = [];
 
-        public Task<JsonObject> FetchVanillaVersionJsonAsync(string gameVersion, CancellationToken cancellationToken) =>
-            Task.FromResult(VanillaJson);
+        public Task<JsonObject> FetchVanillaVersionJsonAsync(string gameVersion, CancellationToken cancellationToken)
+        { VanillaReads++; return Task.FromResult(VanillaJson); }
 
         public Task<JsonObject> FetchLoaderProfileJsonAsync(
             InstallLoader loader, string gameVersion, string build, CancellationToken cancellationToken) =>

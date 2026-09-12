@@ -22,6 +22,10 @@ public static class InstallCatalogRuntimeComposer
         XsrQueryRouterBuilder queries = new();
         queries.Register<InstallEligibilityQuery, InstallEligibilityResult>(InstallEligibilityContract.Query,
             (query, token) => ValueTask.FromResult(PCL.Xsr.XsrResult.Success(service.Evaluate(query))));
+        queries.Register<MinecraftInstallEditQuery, MinecraftInstallEditSnapshot>(MinecraftInstallEditContract.Query,
+            async (query, token) => PCL.Xsr.XsrResult.Success(await MinecraftInstallEditService.ReadAsync(query, token).ConfigureAwait(false)));
+        queries.Register<MinecraftInstallEditPlanQuery, MinecraftInstallEditPlan>(MinecraftInstallEditPlanContract.Query,
+            (query, token) => ValueTask.FromResult(PCL.Xsr.XsrResult.Success(MinecraftInstallEditPlanner.Evaluate(query))));
         var dispatchObserver = observer ?? new Observer();
         return new(service, commands.Build(dispatchObserver), queries.Build(dispatchObserver), http);
     }

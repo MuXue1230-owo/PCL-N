@@ -416,7 +416,7 @@ public static class MinecraftLaunchPlanner
                 request.Features));
     }
 
-    private static JsonObject MergeManifests(JsonObject current, IReadOnlyList<JsonObject> inherited)
+    internal static JsonObject MergeManifests(JsonObject current, IReadOnlyList<JsonObject> inherited)
     {
         JsonObject result = new();
         foreach (JsonObject manifest in inherited.Reverse())
