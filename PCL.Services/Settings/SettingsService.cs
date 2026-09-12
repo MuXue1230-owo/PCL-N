@@ -46,7 +46,7 @@ public static class SettingsErrors
 /// it, so Success means persisted and a failure changes nothing. A failed startup load keeps
 /// schema defaults visible but marks every cell unavailable until the next successful write.
 /// </summary>
-public sealed class SettingsService
+public sealed partial class SettingsService
 {
     public const string OwnerName = "PCL.Services.Settings";
 
@@ -240,6 +240,7 @@ public sealed class SettingsService
 
             Publish(definition, (object)value);
             StateStore.MarkAvailability(_ids[definition.Key], XsrStateAvailability.Available);
+            NotifyChanged();
             _log?.Info("Settings", $"Setting persisted and published key={definition.Key.Value} type={definition.ValueType}");
             return XsrResult.Success();
         }
@@ -294,6 +295,7 @@ public sealed class SettingsService
 
             Publish(definition, typed);
             StateStore.MarkAvailability(_ids[definition.Key], XsrStateAvailability.Available);
+            NotifyChanged();
             return XsrResult.Success();
         }
     }
@@ -352,6 +354,7 @@ public sealed class SettingsService
             }
 
             _log?.Info("Settings", $"Schema defaults persisted and published count={snapshot.Count}");
+            NotifyChanged();
             return XsrResult.Success();
         }
     }
@@ -392,6 +395,7 @@ public sealed class SettingsService
 
             Publish(definition, typed);
             StateStore.MarkAvailability(_ids[definition.Key], XsrStateAvailability.Available);
+            NotifyChanged();
             _log?.Info("Settings", $"Setting persisted and published key={definition.Key.Value} type={definition.ValueType}");
             return XsrResult.Success();
         }

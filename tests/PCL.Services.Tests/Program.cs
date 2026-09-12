@@ -4,6 +4,14 @@ internal static partial class Program
 {
     private static readonly (string Name, Func<ValueTask> Body)[] TestCases =
     [
+        ("settings catalog locks final IA and developer visibility", Sync(SettingsCatalogLocksFinalIa)),
+        ("settings policy uses sealed foundation routes", SettingsPolicyUsesSealedFoundationRoutes),
+        ("settings legacy strategies preserve units and choices", Sync(SettingsLegacyStrategiesKeepTheirMeaning)),
+        ("settings inheritance distinguishes Auto and isolates instances", Sync(SettingsInheritanceIsExplicitAndIsolated)),
+        ("settings overlays resolve in order without enabling mutation", Sync(SettingsOverlayPrecedenceIsPreviewOnly)),
+        ("settings batch failures publish nothing and cross validate", Sync(SettingsBatchFailurePublishesNothing)),
+        ("settings import is previewed atomic and private", Sync(SettingsImportIsPreviewedAtomicAndPrivate)),
+        ("settings layers survive restart and preserve unknown data", Sync(SettingsLayersSurviveRestartAndPreserveUnknowns)),
         ("Java major choices select installed runtimes or acquire missing ones", JavaMajorChoiceUsesInstalledOrDownloads),
         ("process output drains and abnormal exit is analyzed", ProcessOutputDrainsAndAbnormalExitIsAnalyzed),
         ("library deletion is contained and recoverable", LibraryDeleteIsContainedAndRecoverable),

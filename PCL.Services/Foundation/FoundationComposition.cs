@@ -33,6 +33,7 @@ public static class FoundationState
         }
 
         LogService.DeclareState(builder);
+        SettingsPolicyContract.DeclareState(builder);
         DownloadService.DeclareState(builder);
         TaskCenterStateContract.DeclareState(builder);
         AccountService.DeclareState(builder);
@@ -71,8 +72,9 @@ public sealed class FoundationHost
         Accounts = accounts ?? throw new ArgumentNullException(nameof(accounts));
         Telemetry = telemetry ?? throw new ArgumentNullException(nameof(telemetry));
         Settings = settings ?? throw new ArgumentNullException(nameof(settings));
+        SettingsPolicy = new SettingsPolicyService(Settings);
         Tasks = tasks ?? throw new ArgumentNullException(nameof(tasks));
-        _services = Array.AsReadOnly<object>([Logging, Downloads, Accounts, Telemetry, Settings, Tasks]);
+        _services = Array.AsReadOnly<object>([Logging, Downloads, Accounts, Telemetry, Settings, SettingsPolicy, Tasks]);
     }
 
     public XsrStateStore StateStore { get; }
@@ -86,6 +88,7 @@ public sealed class FoundationHost
     public TelemetryService Telemetry { get; }
 
     public SettingsService Settings { get; }
+    public SettingsPolicyService SettingsPolicy { get; }
 
     public TaskCenterService Tasks { get; }
 

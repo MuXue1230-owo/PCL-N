@@ -78,8 +78,8 @@ internal static partial class Program
         FoundationHost host = FoundationComposer.Compose(settingsPort, schema, profilePort, bridge);
         FoundationRuntime runtime = FoundationRuntimeComposer.Compose(host, observer);
 
-        AssertEqual(5, runtime.Commands.Count);
-        AssertEqual(1, runtime.Queries.Count);
+        AssertEqual(8, runtime.Commands.Count);
+        AssertEqual(6, runtime.Queries.Count);
         AssertTrue(runtime.Commands.TryResolve(FoundationRouteIds.SettingsSet, out XsrCommandId commandId));
         AssertTrue(runtime.Commands.TryResolve(FoundationRouteIds.TelemetryConsent, out _));
         AssertTrue(runtime.Commands.TryResolve(FoundationRouteIds.AccountUpsertProfile, out _));

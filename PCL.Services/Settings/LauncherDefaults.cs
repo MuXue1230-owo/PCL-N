@@ -107,6 +107,7 @@ public static class LauncherDefaults
 
     public static IReadOnlyDictionary<string, string> TextDefaults { get; } = new Dictionary<string, string>(StringComparer.Ordinal)
     {
+        [SettingsPolicySchema.StorageKey] = SettingsPolicySchema.EmptyDocument,
         ["SystemHttpProxy"] = string.Empty,
         [Minecraft.MinecraftLibraryService.SettingKey] = string.Empty,
         ["SystemHttpProxyCustomUsername"] = string.Empty,

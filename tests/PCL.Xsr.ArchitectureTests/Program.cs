@@ -109,6 +109,7 @@ internal static class Program
         ValidateCommonBuildProperties(repositoryRoot, failures);
         ValidateServicesDoNotNameDesktop(repositoryRoot, failures);
         ValidateDesktopInstallBoundary(repositoryRoot, failures);
+        ValidateDesktopSettingsBoundary(repositoryRoot, failures);
         ValidateNativeHostInterop(repositoryRoot, failures);
         ValidatePxmlControlCatalog(repositoryRoot, projectPaths, failures);
         ValidateWave3Ci(repositoryRoot, failures);
@@ -127,6 +128,18 @@ internal static class Program
         }
 
         return 1;
+    }
+
+    private static void ValidateDesktopSettingsBoundary(string repositoryRoot, List<string> failures)
+    {
+        foreach (string path in Directory.EnumerateFiles(Path.Combine(repositoryRoot, "PCL.Desktop", "Ui"), "*.cs", SearchOption.AllDirectories))
+        {
+            if (IsBuildOutput(path)) continue;
+            string source = File.ReadAllText(path);
+            foreach (string forbidden in new[] { "SettingsPolicyService", "SettingsPolicySchema", "LauncherSettingsJsonPort", "SettingsService", "NexaSettingsLayers" })
+                if (source.Contains(forbidden, StringComparison.Ordinal))
+                    failures.Add($"Settings UI must use sealed state/query/command contracts, not {forbidden}: {Path.GetRelativePath(repositoryRoot, path)}");
+        }
     }
 
     private static void ValidateDesktopInstallBoundary(string repositoryRoot, List<string> failures)

@@ -66,12 +66,28 @@ public static class FoundationRuntimeComposer
             FoundationRouteIds.AccountSelectProfile,
             FoundationCommands.CreateAccountSelectHandler(host.Accounts));
         commands.Register(FoundationRouteIds.AccountRemoveProfile, FoundationCommands.CreateAccountRemoveHandler(host.Accounts));
+        commands.Register<SettingsMutation>(SettingsPolicyContract.SetCommand,
+            (command, token) => new(Task.Run(() => host.SettingsPolicy.Set(command), token)));
+        commands.Register<SettingsBatchCommand>(SettingsPolicyContract.BatchCommand,
+            (command, token) => new(Task.Run(() => host.SettingsPolicy.SetBatch(command), token)));
+        commands.Register<SettingsImportCommand>(SettingsPolicyContract.ImportCommand,
+            (command, token) => new(Task.Run(() => host.SettingsPolicy.ApplyImport(command), token)));
         XsrCommandRouter commandRouter = commands.Build(dispatchObserver, timeProvider);
 
         XsrQueryRouterBuilder queries = new();
         queries.Register(
             FoundationRouteIds.SettingsGet,
             FoundationQueries.CreateSettingsGetHandler(host.Settings));
+        queries.Register<SettingsCatalogQuery, SettingsCatalogSnapshot>(SettingsPolicyContract.CatalogQuery,
+            (query, token) => ValueTask.FromResult(PCL.Xsr.XsrResult.Success(SettingsCatalog.Read(query))));
+        queries.Register<SettingsEffectiveQuery, SettingsEffectiveSnapshot>(SettingsPolicyContract.EffectiveQuery,
+            (query, token) => ValueTask.FromResult(host.SettingsPolicy.Read(query)));
+        queries.Register<SettingsPreviewQuery, SettingsEffectiveSnapshot>(SettingsPolicyContract.PreviewQuery,
+            (query, token) => ValueTask.FromResult(host.SettingsPolicy.Preview(query)));
+        queries.Register<SettingsExportQuery, string>(SettingsPolicyContract.ExportQuery,
+            (query, token) => ValueTask.FromResult(host.SettingsPolicy.Export(query)));
+        queries.Register<SettingsImportQuery, SettingsImportPreview>(SettingsPolicyContract.ImportPreviewQuery,
+            (query, token) => ValueTask.FromResult(PCL.Xsr.XsrResult.Success(host.SettingsPolicy.PreviewImport(query))));
         XsrQueryRouter queryRouter = queries.Build(dispatchObserver, timeProvider);
 
         return new FoundationRuntime(host, commandRouter, queryRouter);
