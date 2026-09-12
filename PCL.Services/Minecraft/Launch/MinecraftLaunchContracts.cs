@@ -275,6 +275,7 @@ public static class MinecraftLaunchPlanner
         args.Add(classpathValue);
         args.Add(mainClass);
 
+        int gameArgumentStart = args.Count;
         List<string> gameArgs = ReadGameArguments(effectiveManifest, request);
         if (gameArgs.Count == 0) gameArgs = Tokenize(effectiveManifest["minecraftArguments"]?.ToString());
         foreach (string token in gameArgs)
@@ -297,8 +298,8 @@ public static class MinecraftLaunchPlanner
         }
         if (request.Width > 0 && request.Height > 0)
         {
-            args.Add("--width"); args.Add(request.Width.ToString(System.Globalization.CultureInfo.InvariantCulture));
-            args.Add("--height"); args.Add(request.Height.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            SetGameOption(args, gameArgumentStart, "--width", request.Width);
+            SetGameOption(args, gameArgumentStart, "--height", request.Height);
         }
         if (request.Fullscreen) args.Add("--fullscreen");
         AddJoinArguments(args, request);
@@ -312,6 +313,21 @@ public static class MinecraftLaunchPlanner
             ClientJarPath = clientJar,
             IsInheritedClientJar = clientJarResolution.IsInherited,
         };
+    }
+
+    private static void SetGameOption(List<string> args, int start, string name, int value)
+    {
+        for (int i = args.Count - 1; i >= start; i--)
+        {
+            if (args[i] == name)
+            {
+                if (i + 1 < args.Count) args.RemoveAt(i + 1);
+                args.RemoveAt(i);
+            }
+            else if (args[i].StartsWith(name + "=", StringComparison.Ordinal)) args.RemoveAt(i);
+        }
+        args.Add(name);
+        args.Add(value.ToString(System.Globalization.CultureInfo.InvariantCulture));
     }
 
     private static List<string> ReadGameArguments(JsonObject json, MinecraftLaunchRequest request)

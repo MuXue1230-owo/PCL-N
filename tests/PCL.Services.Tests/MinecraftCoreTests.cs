@@ -493,7 +493,7 @@ internal static partial class Program
     internal static void MinecraftLaunchPlanMergesInheritedAndModernArguments()
     {
         JsonObject inherited = JsonNode.Parse("""
-            { "mainClass": "net.minecraft.client.main.Main", "arguments": { "jvm": ["-Dparent=true"], "game": ["--versionType", "${version_type}"] }, "libraries": [{ "name": "org.example:parent:1.0" }] }
+            { "mainClass": "net.minecraft.client.main.Main", "arguments": { "jvm": ["-Dparent=true"], "game": ["--versionType", "${version_type}", "--width", "${resolution_width}", "--height", "${resolution_height}"] }, "libraries": [{ "name": "org.example:parent:1.0" }] }
             """)!.AsObject();
         JsonObject current = JsonNode.Parse("""
             { "id": "loader-1", "arguments": { "jvm": ["--sun-misc-unsafe-memory-access=allow", "-cp", "${classpath}"], "game": [{ "rules": [{ "action": "allow", "os": { "name": "windows" } }], "value": ["--username", "${auth_player_name}"] }] }, "libraries": [{ "name": "org.example:current:1.0" }] }
@@ -516,6 +516,8 @@ internal static partial class Program
         AssertTrue(plan.Arguments.Contains("Steve"));
         AssertTrue(plan.Arguments.Contains("${version_type}") is false);
         AssertEqual(2, plan.Libraries.Count);
+        AssertEqual(1, plan.Arguments.Count(argument => argument == "--width"));
+        AssertEqual(1, plan.Arguments.Count(argument => argument == "--height"));
     }
 
     internal static void MinecraftDownloadSourcePlannerCoversOfficialAndUnlistedMirrors()
